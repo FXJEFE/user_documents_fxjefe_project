@@ -1,0 +1,16 @@
+.env
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.bak_*
+*.bak
+.DS_Store
+logs/
+Logs/
+state/
+*.pkl
+*.joblib
+.idea/
+.vscode/
+FXJEFE_install_kit.py.save
