@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Scan all project .py files for config path usage and report effective path."""
+"""Scan all project .py files for config path usage."""
 from __future__ import annotations
 import json, os, re
 from pathlib import Path
@@ -9,14 +9,14 @@ ROOT = Path.home() / "Documents" / "FXJEFE_Project"
 if not ROOT.is_dir():
     ROOT = Path(__file__).resolve().parent
 
-PATTERNS = [
-    re.compile(r"['\"]config\\.json['\"]"),
-    re.compile(r"CONFIG[_A-Z]*\\s*=\\s*['\"]([^'\"]+)['\"]"),
-    re.compile(r"os\\.environ\\.get\\(\\s*['\"]FXJEFE_CONFIG['\"]"),
-    re.compile(r"Path\\([^)]*config\\.json"),
-    re.compile(r"open\\([^)]*config\\.json"),
-    re.compile(r"config_path"),
-    re.compile(r"read_text\\([^)]*config"),
+# Simple substring markers — avoid fragile regex escaping
+MARKERS = [
+    "config.json",
+    "FXJEFE_CONFIG",
+    "config_path",
+    "CONFIG_PATH",
+    "load_config",
+    "read_config",
 ]
 
 def effective_config() -> Path:
@@ -32,10 +32,9 @@ def scan_file(path: Path) -> dict:
         return {"file": str(path.relative_to(ROOT)), "error": str(e)}
     hits = []
     for i, line in enumerate(text.splitlines(), 1):
-        for pat in PATTERNS:
-            if pat.search(line):
-                hits.append({"line": i, "text": line.strip()[:120]})
-                break
+        low = line.lower()
+        if any(m.lower() in low or m in line for m in MARKERS):
+            hits.append({"line": i, "text": line.strip()[:120]})
     return {
         "file": str(path.relative_to(ROOT)).replace("\\", "/"),
         "mentions_config": len(hits) > 0,
@@ -80,8 +79,10 @@ def main():
         print(r["file"])
     out = ROOT / "production" / "config_path_audit.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"root": str(ROOT), "effective_config": str(cfg), "exists": cfg.is_file(),
-        "with_config": with_cfg, "without_config": [r["file"] for r in without]}, indent=2), encoding="utf-8")
+    out.write_text(json.dumps({
+        "root": str(ROOT), "effective_config": str(cfg), "exists": cfg.is_file(),
+        "with_config": with_cfg, "without_config": [r["file"] for r in without],
+    }, indent=2), encoding="utf-8")
     print("\nwrote", out)
 
 if __name__ == "__main__":
