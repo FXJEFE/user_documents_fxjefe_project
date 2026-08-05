@@ -1,0 +1,13 @@
+FXJEFE venv directory name is ALWAYS: fxjefe
+
+macOS / Linux:
+  python3 -m venv fxjefe
+  source fxjefe/bin/activate
+
+Windows:
+  py -3.11 -m venv fxjefe
+  .\fxjefe\Scripts\Activate.ps1
+
+Rename legacy:
+  mv venv fxjefe
+  Rename-Item venv fxjefe
