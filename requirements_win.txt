@@ -9,5 +9,6 @@ uvicorn[standard]
 requests
 xgboost
 arch
-pandas-ta==0.3.14b1
+optuna
+TA-Lib
 MetaTrader5
