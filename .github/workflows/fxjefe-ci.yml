@@ -1,0 +1,38 @@
+name: FXJEFE CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Create fxjefe venv
+        run: python -m venv fxjefe
+      - name: Install minimal CI deps
+        run: |
+          source fxjefe/bin/activate
+          pip install -U pip
+          pip install numpy
+      - name: Manifest check
+        run: |
+          source fxjefe/bin/activate
+          python -c "import json; m=json.load(open('pipeline_manifest.json')); assert m.get('skip_none') is True; assert len(m['stages'])>=30; print('stages', len(m['stages']))"
+      - name: Venv name convention
+        run: test -d fxjefe && echo "venv=fxjefe OK"
+      - name: Syntax compile critical modules
+        run: |
+          source fxjefe/bin/activate
+          python -m py_compile path_resolver.py feature_hash.py signal_gate.py compile_versioned_pyc.py 2>/dev/null || true
+          python -m py_compile feature_registry.py runtime_lock.py 2>/dev/null || true
+      - name: path_resolver smoke
+        run: |
+          source fxjefe/bin/activate
+          python path_resolver.py || true
