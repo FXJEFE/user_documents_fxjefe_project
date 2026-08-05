@@ -1,0 +1,10 @@
+# FXJEFE — UTF-8 ONLY
+* text=auto eol=lf
+*.py text eol=lf working-tree-encoding=UTF-8
+*.mq5 text eol=lf working-tree-encoding=UTF-8
+*.mqh text eol=lf working-tree-encoding=UTF-8
+*.csv text eol=lf working-tree-encoding=UTF-8
+*.json text eol=lf working-tree-encoding=UTF-8
+*.md text eol=lf working-tree-encoding=UTF-8
+*.pkl binary
+*.joblib binary
