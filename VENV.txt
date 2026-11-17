@@ -1,13 +1,11 @@
-FXJEFE venv directory name is ALWAYS: fxjefe
+Windows pipeline:
+  setup_windows.bat
+  fxjefe    Python 3.11     %USERPROFILE%\Documents\FXJEFE_Project\fxjefe
+  fxjefe38  Python 3.8.10   %USERPROFILE%\Documents\FXJEFE_Project\fxjefe38
+  run:  run_pipeline.bat
 
-macOS / Linux:
+macOS / Linux helper venv used by the Makefile is still named fxjefe:
   python3 -m venv fxjefe
   source fxjefe/bin/activate
 
-Windows:
-  py -3.11 -m venv fxjefe
-  .\fxjefe\Scripts\Activate.ps1
-
-Rename legacy:
-  mv venv fxjefe
-  Rename-Item venv fxjefe
+The Windows pipeline entry point is .venv under PROJECT_ROOT, created by setup_windows.ps1.

@@ -2,9 +2,16 @@
 # -*- coding: utf-8 -*-
 """Latency benchmarks: symbol_info_tick + copy_ticks_range."""
 from __future__ import annotations
-import statistics, time
+
+import logging
+import statistics
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+
+from path_resolver import stage_main
+
+log = logging.getLogger("fxjefe.monitor")
 
 def bench_symbol_info_tick(mt5: Any, symbol: str, n: int = 200) -> Dict[str, float]:
     mt5.symbol_select(symbol, True)
@@ -38,3 +45,52 @@ def bench_copy_ticks(mt5: Any, symbol: str, minutes: float = 5.0, repeats: int =
         counts.append(float(r["count"]))
     return {"p50_ms": statistics.median(latencies), "max_ms": max(latencies),
             "avg_count": statistics.mean(counts), "minutes": minutes, "repeats": float(repeats)}
+
+
+class _FakeTick(object):
+    bid = 1.0
+    ask = 1.0001
+
+
+class _FakeMT5(object):
+    """In-process stand-in so the benchmark can run with no terminal."""
+
+    COPY_TICKS_ALL = 1
+
+    def symbol_select(self, symbol, enable):
+        return True
+
+    def symbol_info_tick(self, symbol):
+        return _FakeTick()
+
+    def copy_ticks_range(self, symbol, date_from, date_to, flags):
+        return (1, 2, 3)
+
+    def last_error(self):
+        return (1, "ok")
+
+
+def run(ctx: Dict[str, Any]) -> int:
+    mt5 = ctx.get("mt5") if ctx.get("mt5_connected") else None
+    if mt5 is None:
+        mt5 = _FakeMT5()
+        log.info("latency bench using in-process MetaTrader5 fake")
+    else:
+        log.info("latency bench using the connected terminal")
+    try:
+        tick = bench_symbol_info_tick(mt5, "EURUSD", n=20)
+        copied = bench_copy_ticks(mt5, "EURUSD", minutes=1.0, repeats=2)
+    except Exception as exc:
+        log.error("latency bench failed: %s", exc)
+        return 1
+    ctx["latency"] = {"tick": tick, "copy": copied}
+    log.info("latency tick_p50_ms=%s copy_p50_ms=%s", tick.get("p50_ms"), copied.get("p50_ms"))
+    return 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -2,14 +2,18 @@
 # -*- coding: utf-8 -*-
 """FXJEFE encoding policy — UTF-8 ONLY. See repo README."""
 from pathlib import Path
-import argparse, json, sys, os
+import argparse
+import json
+import sys
 
 TEXT_SUFFIXES = {".py", ".csv", ".mq5", ".mqh", ".json", ".md", ".txt", ".env", ".tsv"}
 
 def project_root():
-    if sys.platform == "win32":
-        return Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents" / "FXJEFE_Project"
-    return Path.home() / "Documents" / "FXJEFE_Project"
+    code_root = Path(__file__).resolve().parent.parent
+    if str(code_root) not in sys.path:
+        sys.path.insert(0, str(code_root))
+    from path_resolver import resolve_project_root
+    return resolve_project_root(require_exists=False)
 
 def detect_encoding(raw: bytes) -> str:
     if raw.startswith(b"\xef\xbb\xbf"):
@@ -41,7 +45,19 @@ def main():
     ap.add_argument("--fix", action="store_true")
     ap.add_argument("--root", default="")
     args = ap.parse_args()
-    root = Path(args.root) if args.root else project_root()
+    code_root = Path(__file__).resolve().parent.parent
+    if str(code_root) not in sys.path:
+        sys.path.insert(0, str(code_root))
+    if args.root:
+        root = Path(args.root)
+    else:
+        from path_resolver import ProjectRootError, resolve_project_root
+        try:
+            root = resolve_project_root(require_exists=True)
+        except ProjectRootError as exc:
+            print("[FATAL] {0}".format(exc), file=sys.stderr)
+            return 2
+    print("PROJECT_ROOT={0}".format(root))
     report = []
     for p in root.rglob("*"):
         if not p.is_file() or p.suffix.lower() not in TEXT_SUFFIXES:

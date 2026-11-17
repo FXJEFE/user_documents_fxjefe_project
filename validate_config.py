@@ -2,24 +2,19 @@
 # -*- coding: utf-8 -*-
 """Automated FXJEFE config.json validation. Exit 0=OK, 1=errors, 2=fatal."""
 from __future__ import annotations
-import json, os, sys
+import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-ROOT = Path.home() / "Documents" / "FXJEFE_Project"
-if not ROOT.is_dir():
-    ROOT = Path(__file__).resolve().parent
+from path_resolver import config_file, stage_main
 
 REQUIRED_KEYS = {"feature_policy": str, "min_confidence_threshold": (int, float)}
 RECOMMENDED_KEYS = {"features": list, "historical_csv": str, "log_path": str, "data_path": str,
                     "models_path": str, "ai_server_url": str, "api_port": (int, str), "talib_defaults": dict}
 ALLOWED_POLICIES = {"ACCEPT_ALL_FEATURES", "ACCEPT_ALL", "STRICT", "LOCKED"}
 
-def config_path() -> Path:
-    env = os.environ.get("FXJEFE_CONFIG", "").strip()
-    if env:
-        return Path(env).expanduser().resolve()
-    return (ROOT / "config.json").resolve()
+def config_path(root: Path) -> Path:
+    return config_file(root)
 
 def load(path: Path) -> Tuple[Dict[str, Any], List[str]]:
     errors: List[str] = []
@@ -82,36 +77,51 @@ def check_paths(data: Dict[str, Any], root: Path) -> Tuple[List[str], List[str]]
             errs.append(f"cannot create log_path {lp}: {e}")
     return errs, warns
 
-def main() -> int:
-    path = config_path()
-    print(f"[CONFIG-VALIDATE] path={path}")
+def run(ctx: Dict[str, Any]) -> int:
+    root = ctx["project_root"]
+    path = config_path(root)
+    print("[CONFIG-VALIDATE] path={0}".format(path))
     data, load_errs = load(path)
     if load_errs and not data:
-        for e in load_errs:
-            print(f"[ERROR] {e}")
+        for err in load_errs:
+            print("[ERROR] {0}".format(err))
         return 2
     errors, warnings = list(load_errs), []
     errors.extend(check_types(data))
-    e2, w2 = check_values(data)
-    errors.extend(e2); warnings.extend(w2)
-    e3, w3 = check_paths(data, ROOT)
-    errors.extend(e3); warnings.extend(w3)
+    value_errors, value_warnings = check_values(data)
+    errors.extend(value_errors)
+    warnings.extend(value_warnings)
+    path_errors, path_warnings = check_paths(data, root)
+    errors.extend(path_errors)
+    warnings.extend(path_warnings)
     for key in RECOMMENDED_KEYS:
         if key not in data:
-            warnings.append(f"recommended key missing: {key}")
-    for w in warnings:
-        print(f"[WARN] {w}")
-    for e in errors:
-        print(f"[ERROR] {e}")
-    summary = {"path": str(path), "ok": len(errors) == 0, "errors": errors, "warnings": warnings,
-               "policy": data.get("feature_policy"), "gate": data.get("min_confidence_threshold"),
-               "feature_count": len(data["features"]) if isinstance(data.get("features"), list) else None}
-    out = ROOT / "production" / "config_validate.json"
+            warnings.append("recommended key missing: {0}".format(key))
+    for warning in warnings:
+        print("[WARN] {0}".format(warning))
+    for err in errors:
+        print("[ERROR] {0}".format(err))
+    summary = {
+        "path": str(path),
+        "ok": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "policy": data.get("feature_policy"),
+        "gate": data.get("min_confidence_threshold"),
+        "feature_count": len(data["features"]) if isinstance(data.get("features"), list) else None,
+    }
+    out = root / "production" / "config_validate.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"[CONFIG-VALIDATE] wrote {out}")
+    print("[CONFIG-VALIDATE] wrote {0}".format(out))
     print("[CONFIG-VALIDATE] " + ("FAIL" if errors else "OK"))
+    ctx["config"] = data
     return 1 if errors else 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

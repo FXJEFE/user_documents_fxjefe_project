@@ -10,12 +10,21 @@ def log(m: str) -> None:
     print(f"[FXJEFE-STRAP] {m}", flush=True)
 
 def project_root() -> Path:
-    if sys.platform == "win32":
-        return Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents" / "FXJEFE_Project"
-    return Path.home() / "Documents" / "FXJEFE_Project"
+    from path_resolver import resolve_project_root
+    cli = None
+    if "--project-dir" in sys.argv:
+        index = sys.argv.index("--project-dir")
+        if index + 1 < len(sys.argv):
+            cli = sys.argv[index + 1]
+    return resolve_project_root(cli, require_exists=True)
 
 def main() -> int:
-    root = project_root()
+    try:
+        root = project_root()
+    except Exception as exc:
+        log("PROJECT_ROOT error: {0}".format(exc))
+        return 2
+    log("PROJECT_ROOT={0}".format(root))
     state = root / "state"
     state.mkdir(parents=True, exist_ok=True)
     prod = root / "production"

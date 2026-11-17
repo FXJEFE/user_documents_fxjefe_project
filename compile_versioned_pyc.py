@@ -9,14 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 def project_root() -> Path:
-    env = os.environ.get("FXJEFE_PROJECT_ROOT")
-    if env:
-        return Path(env)
-    if sys.platform == "win32":
-        home = Path(os.environ.get("USERPROFILE", str(Path.home())))
-    else:
-        home = Path.home()
-    return home / "Documents" / "FXJEFE_Project"
+    from path_resolver import resolve_project_root
+    cli = None
+    if "--project-dir" in sys.argv:
+        index = sys.argv.index("--project-dir")
+        if index + 1 < len(sys.argv):
+            cli = sys.argv[index + 1]
+    return resolve_project_root(cli, require_exists=True)
 
 def sha256_file(p: Path) -> str:
     h = hashlib.sha256()
@@ -40,9 +39,12 @@ def load_manifest(root: Path) -> list:
     return []
 
 def main() -> int:
-    root = project_root()
-    if not root.is_dir():
-        root = Path.cwd()
+    try:
+        root = project_root()
+    except Exception as exc:
+        print("[FATAL] {0}".format(exc), file=sys.stderr)
+        return 2
+    print("PROJECT_ROOT={0}".format(root))
     prod = root / "production"
     prod.mkdir(parents=True, exist_ok=True)
     last = root / "state" / "last_production_run.json"

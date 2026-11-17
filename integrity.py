@@ -2,15 +2,28 @@
 # -*- coding: utf-8 -*-
 """FXJEFE integrity: generate/validate SHA256, JSON parse, package signatures."""
 from __future__ import annotations
-import argparse, hashlib, json, os, subprocess, sys
+import argparse, hashlib, json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from path_resolver import ProjectRootError, resolve_project_root
 
 SKIP_PARTS = {"fxjefe", "venv", ".venv", "__pycache__", ".git", "production", "logs", "Logs", "state", "models"}
+GROUP_ORDER = (
+    "project_root_config_ftmo",
+    "mt5_health",
+    "data",
+    "features",
+    "model",
+    "signals",
+    "ftmo_risk_gate",
+    "execution",
+    "monitoring",
+)
 
-def root_dir() -> Path:
-    return Path(os.environ.get("FXJEFE_PROJECT_ROOT") or Path.cwd()).resolve()
+def root_dir(cli_dir: Optional[str] = None) -> Path:
+    return resolve_project_root(cli_dir, require_exists=True)
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -88,17 +101,39 @@ def json_check(paths: List[str], root: Path) -> int:
         except Exception as e:
             print(f"[JSON] ERROR {p}: {e}"); rc = 1; continue
         if p.name == "pipeline_manifest.json":
-            stages = data.get("stages") if isinstance(data, dict) else None
-            n = len(stages) if isinstance(stages, list) else 0
-            if n < 30:
-                print(f"[JSON] stages {n} < 30"); rc = 1
-            else:
-                print(f"[JSON] OK stages={n}")
+            rc |= _check_manifest(data if isinstance(data, dict) else {}, root)
         elif p.name == "config.json":
             print(f"[JSON] OK config keys={len(data) if isinstance(data, dict) else 0}")
         else:
             print(f"[JSON] OK {p.name}")
     return rc
+
+def _check_manifest(data: Dict[str, Any], root: Path) -> int:
+    stages = data.get("stages")
+    if not isinstance(stages, list) or not stages:
+        print("[JSON] manifest has no stages")
+        return 1
+    rc = 0
+    last = -1
+    for stage in stages:
+        group = stage.get("group")
+        script = stage.get("script")
+        if group not in GROUP_ORDER:
+            print("[JSON] unknown group {0}".format(group))
+            rc = 1
+            continue
+        index = GROUP_ORDER.index(group)
+        if index < last:
+            print("[JSON] group out of order {0}".format(group))
+            rc = 1
+        last = index
+        if not script or not (root / script).is_file():
+            print("[JSON] missing stage script {0}".format(script))
+            rc = 1
+        else:
+            print("[JSON] OK {0}".format(script))
+    return rc
+
 
 def package_signatures(root: Path) -> int:
     report = {"created_utc": datetime.now(timezone.utc).isoformat(), "python": sys.version, "requirements_files": {}, "pip_freeze": []}
@@ -117,12 +152,18 @@ def package_signatures(root: Path) -> int:
     print(f"[PACKAGES] wrote {path}")
     return 0
 
-def main() -> int:
+def main(argv: Optional[list] = None) -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--project-dir", default=None)
     ap.add_argument("command", choices=["generate", "validate", "json-check", "packages", "all"])
     ap.add_argument("paths", nargs="*")
-    args = ap.parse_args()
-    root = root_dir()
+    args = ap.parse_args(argv)
+    try:
+        root = root_dir(args.project_dir)
+    except ProjectRootError as exc:
+        print("[FATAL] {0}".format(exc), file=sys.stderr)
+        return 2
+    print("PROJECT_ROOT={0}".format(root))
     if args.command == "generate":
         generate(root); return 0
     if args.command == "validate":

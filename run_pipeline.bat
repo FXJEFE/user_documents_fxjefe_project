@@ -1,0 +1,28 @@
+@echo off
+setlocal EnableExtensions
+set "ROOT=%FXJEFE_PROJECT_DIR%"
+if "%ROOT%"=="" set "ROOT=%USERPROFILE%\Documents\FXJEFE_Project"
+if not exist "%ROOT%\run_pipeline.py" (
+    echo PROJECT_ROOT does not exist or has no run_pipeline.py: %ROOT%
+    echo Clone this repo to %%USERPROFILE%%\Documents\FXJEFE_Project or set FXJEFE_PROJECT_DIR.
+    exit /b 1
+)
+if not exist "%ROOT%\fxjefe\Scripts\activate.bat" (
+    echo Virtualenv not found at %ROOT%\fxjefe
+    echo Run setup_windows.bat first.
+    exit /b 1
+)
+call "%ROOT%\fxjefe\Scripts\activate.bat"
+cd /d "%ROOT%"
+echo %* | findstr /i /c:"--paper" /c:"--dry-run" >nul
+if errorlevel 1 (
+    echo ============================================================
+    echo LIVE MODE
+    echo Real orders are sent after the FTMO gate and margin guard.
+    echo Pass --paper to run without sending orders.
+    echo ============================================================
+) else (
+    echo PAPER MODE
+)
+python run_pipeline.py --project-dir "%ROOT%" %*
+exit /b %ERRORLEVEL%

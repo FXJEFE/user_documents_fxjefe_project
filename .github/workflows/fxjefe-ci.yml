@@ -14,25 +14,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Create fxjefe venv
-        run: python -m venv fxjefe
-      - name: Install minimal CI deps
+      - name: Install pipeline dependencies except MetaTrader5
         run: |
-          source fxjefe/bin/activate
-          pip install -U pip
-          pip install numpy
-      - name: Manifest check
+          python -m pip install -U pip
+          grep -vi -e '^MetaTrader5' -e '^#' requirements.txt | python -m pip install -r /dev/stdin
+      - name: Syntax and pipeline tests
         run: |
-          source fxjefe/bin/activate
-          python -c "import json; m=json.load(open('pipeline_manifest.json')); assert m.get('skip_none') is True; assert len(m['stages'])>=30; print('stages', len(m['stages']))"
-      - name: Venv name convention
-        run: test -d fxjefe && echo "venv=fxjefe OK"
-      - name: Syntax compile critical modules
-        run: |
-          source fxjefe/bin/activate
-          python -m py_compile path_resolver.py feature_hash.py signal_gate.py compile_versioned_pyc.py 2>/dev/null || true
-          python -m py_compile feature_registry.py runtime_lock.py 2>/dev/null || true
-      - name: path_resolver smoke
-        run: |
-          source fxjefe/bin/activate
-          python path_resolver.py || true
+          python -m compileall -q -f .
+          python -m unittest discover -s tests -v
+          python -c "import run_pipeline; stages=run_pipeline.load_manifest(); assert len(stages)==17; print('stages', len(stages))"
