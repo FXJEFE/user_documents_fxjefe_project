@@ -68,8 +68,49 @@ def precheck_local(mt5: Any, symbol: str, side: str, volume: float,
     return PrecheckResult(True, "ok", volume=vol, margin_est=margin_est, free_margin=free)
 
 
+def guard_lot(
+    lot: float,
+    equity: float,
+    margin_used: float,
+    free_margin: float,
+    margin_per_lot: float,
+    notional_per_lot: float,
+    min_margin_level_percent: float,
+    max_position_size: float,
+    max_leverage: float,
+    volume_step: float = 0.01,
+) -> float:
+    """Shrink lot so margin level stays at or above the floor and free margin stays non-negative.
+
+    order_calc_margin output is passed in as margin_per_lot. max_leverage floors that
+    estimate at notional/max_leverage so a higher broker leverage cannot understate margin.
+    """
+    if lot <= 0 or equity <= 0 or max_position_size <= 0:
+        return 0.0
+    step = volume_step if volume_step and volume_step > 0 else 0.01
+    lot = min(float(lot), float(max_position_size))
+    lot = round(int(lot / step) * step, 8)
+    leverage = float(max_leverage) if max_leverage and max_leverage > 0 else 0.0
+
+    def margin_for(qty: float) -> float:
+        calculated = max(0.0, float(margin_per_lot)) * qty
+        if leverage <= 0 or notional_per_lot <= 0:
+            return calculated
+        return max(calculated, (float(notional_per_lot) * qty) / leverage)
+
+    while lot >= step - 1e-12:
+        added = margin_for(lot)
+        free_after = float(free_margin) - added
+        used_after = float(margin_used) + added
+        level = (float(equity) / used_after * 100.0) if used_after > 0 else float("inf")
+        if free_after >= 0 and level + 1e-9 >= float(min_margin_level_percent):
+            return lot
+        lot = round(lot - step, 8)
+    return 0.0
+
+
 def run(ctx: Dict[str, Any]) -> int:
-    """Paper execution. This checkout never calls order_send."""
+    """Kept for direct calls. The pipeline execution stage is strategy_loop.py."""
     dry_run = bool(ctx.get("dry_run", True))
     emit = bool(ctx.get("signal_emit"))
     clear = bool(ctx.get("ftmo_clear"))

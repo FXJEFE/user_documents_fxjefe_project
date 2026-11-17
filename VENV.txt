@@ -1,6 +1,7 @@
-Windows pipeline (Python 3.8.10, 64-bit):
+Windows pipeline:
   setup_windows.bat
-  venv: %USERPROFILE%\Documents\FXJEFE_Project\.venv
+  fxjefe    Python 3.11     %USERPROFILE%\Documents\FXJEFE_Project\fxjefe
+  fxjefe38  Python 3.8.10   %USERPROFILE%\Documents\FXJEFE_Project\fxjefe38
   run:  run_pipeline.bat
 
 macOS / Linux helper venv used by the Makefile is still named fxjefe:

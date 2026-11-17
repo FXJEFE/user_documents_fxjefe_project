@@ -1,0 +1,18 @@
+{
+  "account": "demo-200k",
+  "account_balance_ref": 200000,
+  "max_drawdown_percent": 6.66,
+  "close_positions_on_stop": false,
+  "risk_percent": 33.3,
+  "profit_target_percent": 11.1,
+  "min_margin_level_percent": 300,
+  "max_position_size": 1.0,
+  "max_leverage": 100,
+  "python_executable": "fxjefe",
+  "mt5_mql5_dir": "C:\\Users\\FullSend\\AppData\\Roaming\\MetaQuotes\\Terminal\\492CD01931BD0D07A159AEF5B29BF32C\\MQL5",
+  "timeframes": ["M1", "M5", "M15", "H1"],
+  "symbols": [],
+  "ai_server_url": "http://127.0.0.1:8080",
+  "predict_path": "/predict",
+  "min_confidence": 0.77
+}

@@ -30,7 +30,7 @@ cd FXJEFE_Project
 
 ### 2. Python
 
-The Windows MT5 pipeline targets **CPython 3.8.10, 64-bit**. `setup_windows.bat` installs that interpreter per-user when `py -3.8` is not already 3.8.10, creates `<PROJECT_ROOT>\.venv`, and installs `requirements.txt`.
+Windows uses two virtualenvs under `PROJECT_ROOT`. `fxjefe` is Python 3.11 (pipeline, golden server, MetaTrader5, optional onnxruntime). `fxjefe38` is Python 3.8.10 (TA-Lib wheel plus TensorFlow 2.10.1). `setup_windows.bat` installs either interpreter per-user when it is missing and pip-installs `requirements.txt` and `requirements-fxjefe38.txt`.
 
 **Windows**
 

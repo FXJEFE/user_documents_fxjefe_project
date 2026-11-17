@@ -130,7 +130,8 @@ def resolve(root: Optional[Path] = None) -> Dict[str, str]:
         cfg = {}
     return {
         "project_root": str(root),
-        "venv_dir": str(root / ".venv"),
+        "venv_dir": str(root / "fxjefe"),
+        "venv38_dir": str(root / "fxjefe38"),
         "scripts_path": _pick(root, cfg, "scripts_path", ""),
         "models_path": _pick(root, cfg, "models_path", "models"),
         "data_path": _pick(root, cfg, "data_path", "data"),

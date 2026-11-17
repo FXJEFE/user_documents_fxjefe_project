@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
+from fxjefe_paths import mql5_layout
 from path_resolver import historical_csv, load_config, stage_main
 
 log = logging.getLogger("fxjefe.data")
@@ -24,6 +25,15 @@ def run(ctx: Dict[str, Any]) -> int:
     path = historical_csv(root, cfg)
     ctx["historical_csv"] = str(path)
     log.info("historical_csv=%s", path)
+    layout = mql5_layout(ctx.get("ftmo") if isinstance(ctx.get("ftmo"), dict) else None)
+    log.info(
+        "MQL5 sync root=%s Experts=%s Include=%s Files=%s present=%s",
+        layout["root"],
+        layout["Experts"],
+        layout["Include"],
+        layout["Files"],
+        layout["root"].is_dir(),
+    )
     if path.is_file() and path.stat().st_size > 0:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             rows = sum(1 for _ in handle)

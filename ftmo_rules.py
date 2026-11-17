@@ -20,6 +20,7 @@ from path_resolver import load_config, stage_main
 log = logging.getLogger("fxjefe.ftmo")
 
 FILE_CANDIDATES = (
+    "configftmo.json",
     "ftmoconfig.json",
     "ftmo_config.json",
     "FTMOConfig.json",
@@ -53,22 +54,57 @@ SECRET_KEYS = {
 }
 
 ALIASES = {
+    "maxdrawdownpercent": "max_drawdown_percent",
+    "maxdrawdownpct": "max_drawdown_percent",
+    "maxtotalddpercent": "max_drawdown_percent",
+    "maxtotalddpct": "max_drawdown_percent",
+    "maxtotaldrawdownpercent": "max_drawdown_percent",
+    "maxlosspercent": "max_drawdown_percent",
     "maxdailylosspercent": "max_daily_loss_percent",
+    "maxdailylosspct": "max_daily_loss_percent",
     "dailylosspercent": "max_daily_loss_percent",
+    "dailylosspct": "max_daily_loss_percent",
     "maxdailyloss": "max_daily_loss_percent",
-    "maxtotalddpercent": "max_total_drawdown_percent",
-    "maxdrawdownpercent": "max_total_drawdown_percent",
-    "maxtotaldrawdownpercent": "max_total_drawdown_percent",
-    "maxlosspercent": "max_total_drawdown_percent",
-    "maxtraderiskpct": "max_trade_risk_percent",
-    "riskpercent": "max_trade_risk_percent",
-    "maxriskpercent": "max_trade_risk_percent",
+    "riskpercent": "risk_percent",
+    "riskpct": "risk_percent",
+    "maxtraderiskpct": "risk_percent",
+    "maxriskpercent": "risk_percent",
+    "profittargetpercent": "profit_target_percent",
+    "profittargetpct": "profit_target_percent",
+    "minmarginlevelpercent": "min_margin_level_percent",
+    "minmarginlevelpct": "min_margin_level_percent",
     "maxpositionsize": "max_position_size",
     "maxlot": "max_position_size",
+    "maxleverage": "max_leverage",
     "stoplossmultiplier": "stop_loss_multiplier",
+    "accountbalanceref": "account_balance_ref",
+    "minconfidence": "min_confidence",
 }
 
-LOSS_KEYS = ("max_daily_loss_percent", "max_total_drawdown_percent")
+STRING_KEYS = {
+    "account": "account",
+    "pythonexecutable": "python_executable",
+    "mt5mql5dir": "mt5_mql5_dir",
+    "aiserverurl": "ai_server_url",
+    "predictpath": "predict_path",
+}
+BOOL_KEYS = {"closepositionsonstop": "close_positions_on_stop"}
+LIST_KEYS = {"timeframes": "timeframes", "symbols": "symbols"}
+LIMIT_KEYS = (
+    "max_drawdown_percent",
+    "max_daily_loss_percent",
+    "risk_percent",
+    "profit_target_percent",
+    "min_margin_level_percent",
+    "max_position_size",
+    "max_leverage",
+    "stop_loss_multiplier",
+    "account_balance_ref",
+    "min_confidence",
+)
+# max_drawdown_percent alone is enough. A daily-loss key is optional.
+REQUIRED_ANY = ("max_drawdown_percent", "max_daily_loss_percent")
+DEFAULT_MIN_MARGIN_LEVEL_PERCENT = 300.0
 
 
 def _norm_key(key: str) -> str:
@@ -115,16 +151,30 @@ def _rules_from_mapping(raw: Dict[str, Any], source: str) -> Dict[str, Any]:
         )
     rules: Dict[str, Any] = {"source": source}
     for key, value in pairs:
-        name = _norm_key(key)
-        if not name or name in rules:
+        compact = "".join(ch for ch in str(key).lower() if ch.isalnum())
+        if compact in STRING_KEYS and STRING_KEYS[compact] not in rules and isinstance(value, str):
+            rules[STRING_KEYS[compact]] = value.strip()
             continue
-        if isinstance(value, (dict, list)):
+        if compact in BOOL_KEYS and BOOL_KEYS[compact] not in rules:
+            if isinstance(value, bool):
+                rules[BOOL_KEYS[compact]] = value
+                continue
+            if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+                rules[BOOL_KEYS[compact]] = value.strip().lower() == "true"
+                continue
+        if compact in LIST_KEYS and LIST_KEYS[compact] not in rules and isinstance(value, list):
+            rules[LIST_KEYS[compact]] = [str(item).strip() for item in value if str(item).strip()]
+            continue
+        name = _norm_key(key)
+        if not name or name in rules or isinstance(value, (dict, list)):
             continue
         try:
             number = _as_float(value)
         except (TypeError, ValueError):
             continue
         rules[name] = number
+    if "min_margin_level_percent" not in rules:
+        rules["min_margin_level_percent"] = DEFAULT_MIN_MARGIN_LEVEL_PERCENT
     return rules
 
 
@@ -208,26 +258,29 @@ def _require_limits(rules: Dict[str, Any]) -> Optional[str]:
         return (
             "No FTMO config found under PROJECT_ROOT. Looked for: {0}. "
             "Also checked config.json keys {1}. "
-            "No ftmoconfig/FTMOConfig/ftmo_config file exists in this repo or the "
-            "accessible sibling repos (saturnsync, April25AmenAlignment, 420-25). "
-            "Refusing to invent daily-loss or drawdown limits.".format(
+            "The primary filename is configftmo.json. "
+            "Refusing to invent drawdown or risk limits.".format(
                 ", ".join(searched), ", ".join(EMBEDDED_KEYS)
             )
         )
-    if not any(key in rules for key in LOSS_KEYS):
+    if not any(key in rules for key in REQUIRED_ANY):
         return (
-            "FTMO config {0} has no max daily-loss or max total-drawdown percent. "
+            "FTMO config {0} has no max_drawdown_percent (a daily-loss key is optional). "
             "Refusing to invent one.".format(rules.get("source"))
         )
-    for key in LOSS_KEYS:
+    for key in ("max_drawdown_percent", "max_daily_loss_percent", "risk_percent", "profit_target_percent", "min_confidence"):
         if key not in rules:
             continue
         value = float(rules[key])
         if not (0.0 < value <= 100.0):
             return "FTMO limit {0}={1} is outside 0 < percent <= 100".format(key, value)
-    for key in ("max_trade_risk_percent", "max_position_size", "stop_loss_multiplier"):
-        if key in rules and float(rules[key]) < 0:
-            return "FTMO limit {0} is negative".format(key)
+    if "min_margin_level_percent" in rules and float(rules["min_margin_level_percent"]) <= 0:
+        return "min_margin_level_percent must be positive"
+    for key in ("max_position_size", "max_leverage", "account_balance_ref", "stop_loss_multiplier"):
+        if key in rules and float(rules[key]) <= 0:
+            return "FTMO limit {0} must be positive".format(key)
+    if "python_executable" in rules and "venv311" in str(rules["python_executable"]).replace("\\", "/").lower():
+        return "python_executable must be the project fxjefe venv, not venv311"
     return None
 
 
@@ -248,7 +301,7 @@ def run(ctx: Dict[str, Any]) -> int:
         log.error("%s", error)
         ctx["ftmo_clear"] = False
         return 1
-    for key in LOSS_KEYS + ("max_trade_risk_percent", "max_position_size", "stop_loss_multiplier"):
+    for key in LIMIT_KEYS + ("close_positions_on_stop", "account", "python_executable", "mt5_mql5_dir"):
         if key in rules:
             log.info("FTMO rule %s=%s source=%s", key, rules[key], rules.get("source"))
     return 0
@@ -268,6 +321,7 @@ def account_snapshot(ctx: Dict[str, Any]) -> Dict[str, Optional[float]]:
         ("equity", "FXJEFE_ACCOUNT_EQUITY"),
         ("day_start_equity", "FXJEFE_DAY_START_EQUITY"),
         ("initial_balance", "FXJEFE_INITIAL_BALANCE"),
+        ("peak", "FXJEFE_EQUITY_PEAK"),
     )
     for field, env_name in mapping:
         if account.get(field) is None:
@@ -301,10 +355,18 @@ def run_gate(ctx: Dict[str, Any]) -> int:
         ctx["ftmo_clear"] = False
         return 1
     equity = account.get("equity")
-    checks = (
-        ("max_daily_loss_percent", _loss_percent(account.get("day_start_equity"), equity), "daily loss"),
-        ("max_total_drawdown_percent", _loss_percent(account.get("initial_balance"), equity), "total drawdown"),
-    )
+    ctx["close_positions"] = bool(rules.get("close_positions_on_stop"))
+    ctx["block_new_entries"] = False
+    reference = rules.get("account_balance_ref")
+    if reference is None:
+        reference = account.get("initial_balance")
+    checks = []
+    if "max_drawdown_percent" in rules:
+        checks.append(("max_drawdown_percent", _loss_percent(reference, equity), "drawdown vs reference balance"))
+        if account.get("peak") is not None:
+            checks.append(("max_drawdown_percent", _loss_percent(account.get("peak"), equity), "drawdown vs peak"))
+    if "max_daily_loss_percent" in rules:
+        checks.append(("max_daily_loss_percent", _loss_percent(account.get("day_start_equity"), equity), "daily loss"))
     missing_observation = False
     for key, observed, label in checks:
         if key not in rules:
@@ -316,9 +378,37 @@ def run_gate(ctx: Dict[str, Any]) -> int:
             continue
         log.info("FTMO %s %.4f%% limit %.4f%%", label, observed, limit)
         if observed >= limit:
-            log.error("FTMO breach: %s %.4f%% >= limit %.4f%%. Orders blocked.", label, observed, limit)
+            ctx["block_new_entries"] = True
             ctx["ftmo_clear"] = False
             ctx["orders_allowed"] = False
+            log.error(
+                "FTMO breach: %s %.4f%% >= limit %.4f%%. New entries blocked. "
+                "Open positions are not closed (close_positions_on_stop=%s).",
+                label,
+                observed,
+                limit,
+                ctx["close_positions"],
+            )
+            return 1
+    if (
+        equity is not None
+        and reference is not None
+        and float(reference) > 0
+        and "profit_target_percent" in rules
+    ):
+        gain = (float(equity) - float(reference)) / float(reference) * 100.0
+        log.info("FTMO profit vs reference %.4f%% target %.4f%%", gain, float(rules["profit_target_percent"]))
+        if gain >= float(rules["profit_target_percent"]):
+            ctx["block_new_entries"] = True
+            ctx["ftmo_clear"] = False
+            ctx["orders_allowed"] = False
+            log.error(
+                "FTMO stop: profit target %.4f%% reached (%.4f%%). New entries blocked. "
+                "Open positions are not closed (close_positions_on_stop=%s).",
+                float(rules["profit_target_percent"]),
+                gain,
+                ctx["close_positions"],
+            )
             return 1
     if missing_observation:
         ctx["ftmo_clear"] = False

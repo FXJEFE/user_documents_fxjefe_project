@@ -7,12 +7,12 @@ if not exist "%ROOT%\run_pipeline.py" (
     echo Clone this repo to %%USERPROFILE%%\Documents\FXJEFE_Project or set FXJEFE_PROJECT_DIR.
     exit /b 1
 )
-if not exist "%ROOT%\.venv\Scripts\activate.bat" (
-    echo Virtualenv not found at %ROOT%\.venv
+if not exist "%ROOT%\fxjefe\Scripts\activate.bat" (
+    echo Virtualenv not found at %ROOT%\fxjefe
     echo Run setup_windows.bat first.
     exit /b 1
 )
-call "%ROOT%\.venv\Scripts\activate.bat"
+call "%ROOT%\fxjefe\Scripts\activate.bat"
 cd /d "%ROOT%"
 python run_pipeline.py --project-dir "%ROOT%" %*
 exit /b %ERRORLEVEL%

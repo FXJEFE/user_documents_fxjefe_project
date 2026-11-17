@@ -12,11 +12,15 @@ import argparse
 import importlib.util
 import json
 import logging
+import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from path_resolver import ProjectRootError, build_context
+from fxjefe_paths import venv_python
+from path_resolver import ProjectRootError, build_context, load_config
 
 CODE_ROOT = Path(__file__).resolve().parent
 GROUP_ORDER = (
@@ -35,15 +39,9 @@ log = logging.getLogger("fxjefe.pipeline")
 
 def check_interpreter() -> int:
     version = sys.version.split()[0]
-    if sys.version_info[:2] != (3, 8):
+    if sys.platform == "win32" and sys.version_info[:2] == (3, 8) and version != "3.8.10":
         print(
-            "[FATAL] Python 3.8 is required (Windows target is 3.8.10). This interpreter is {0}.".format(version),
-            file=sys.stderr,
-        )
-        return 2
-    if sys.platform == "win32" and version != "3.8.10":
-        print(
-            "[FATAL] Windows pipeline requires Python 3.8.10 exactly. This interpreter is {0}.".format(version),
+            "[FATAL] Windows Python 3.8 feature venv must be 3.8.10 exactly. This interpreter is {0}.".format(version),
             file=sys.stderr,
         )
         return 2
@@ -115,12 +113,7 @@ def execute(ctx: Dict[str, Any], stages: List[Dict[str, Any]]) -> int:
         group = stage["group"]
         log.info("START %s/%s group=%s script=%s entry=%s", index, total, group, script, entry)
         try:
-            module = load_module(script, ctx.get("code_root") or CODE_ROOT)
-            fn = getattr(module, entry, None)
-            if fn is None:
-                log.error("%s has no %s()", script, entry)
-                return 1
-            rc = int(fn(ctx) or 0)
+            rc = _run_stage(ctx, stage)
         except Exception as exc:
             log.exception("stage %s failed: %s", script, exc)
             return 1
@@ -135,11 +128,95 @@ def execute(ctx: Dict[str, Any], stages: List[Dict[str, Any]]) -> int:
             )
             return rc
         log.info("OK %s", script if entry == "run" else "{0}:{1}".format(script, entry))
-    if ctx.get("order_sent"):
+    if ctx.get("dry_run", True) and ctx.get("order_sent"):
         log.error("pipeline finished with order_sent set; paper mode must not send orders")
         return 1
     log.info("pipeline finished dry_run=%s order_sent=%s", ctx.get("dry_run", True), ctx.get("order_sent"))
     return 0
+
+
+def _run_stage(ctx: Dict[str, Any], stage: Dict[str, Any]) -> int:
+    script = stage["script"]
+    entry = stage.get("entry") or "run"
+    code_root = Path(ctx.get("code_root") or CODE_ROOT)
+    which = stage.get("python") or "fxjefe"
+    if which == "fxjefe38":
+        other = venv_python(ctx["project_root"], "fxjefe38")
+        if other and Path(other).resolve() != Path(sys.executable).resolve():
+            cmd = [str(other), str(code_root / script), "--project-dir", str(ctx["project_root"])]
+            if not ctx.get("dry_run", True):
+                cmd.append("--live")
+            log.info("fxjefe38 %s", " ".join(cmd))
+            completed = subprocess.run(cmd)
+            return int(completed.returncode)
+    module = load_module(script, code_root)
+    fn = getattr(module, entry, None)
+    if fn is None:
+        log.error("%s has no %s()", script, entry)
+        return 1
+    return int(fn(ctx) or 0)
+
+
+def _health(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=2) as response:
+            if response.status != 200:
+                return False
+            body = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return False
+    return isinstance(body, dict) and body.get("status") == "running"
+
+
+def verify_prelude(ctx: Dict[str, Any]) -> int:
+    """runtime_lock, feature_hash, signal_gate, verify_checksums, then golden /health."""
+    code_root = Path(ctx.get("code_root") or CODE_ROOT)
+    project = ctx["project_root"]
+    steps = (
+        ("runtime_lock.py", project),
+        ("feature_hash.py", project),
+        ("runtime/signal_gate.py", project),
+        ("verify_checksums.py", code_root),
+    )
+    for script, folder in steps:
+        cmd = [sys.executable, str(code_root / script), "--project-dir", str(folder)]
+        log.info("verify %s", " ".join(cmd))
+        completed = subprocess.run(cmd)
+        if completed.returncode != 0:
+            log.error("verification failed: %s exit %s", script, completed.returncode)
+            return int(completed.returncode)
+    cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else load_config(project)
+    base = str(cfg.get("ai_server_url") or "http://127.0.0.1:{0}".format(cfg.get("api_port") or 8080)).rstrip("/")
+    health = base + "/health"
+    if not _health(base):
+        cmd = [sys.executable, str(code_root / "ai_server_golden.py"), "--project-dir", str(project)]
+        log.info("start %s", " ".join(cmd))
+        proc = subprocess.Popen(cmd)
+        ctx["golden_server"] = proc
+        ready = False
+        for _ in range(40):
+            if proc.poll() is not None:
+                break
+            if _health(base):
+                ready = True
+                break
+            time.sleep(0.1)
+        if not ready:
+            log.error("ai_server_golden /health failed: %s", health)
+            return 1
+    log.info("golden /health ok %s", health)
+    return 0
+
+
+def _stop_server(ctx: Dict[str, Any]) -> None:
+    proc = ctx.get("golden_server")
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
 
 def main(argv: List[str] = None) -> int:
@@ -159,13 +236,19 @@ def main(argv: List[str] = None) -> int:
     _configure_logging(ctx["project_root"])
     log.info("PROJECT_ROOT=%s", ctx["project_root"])
     log.info("CODE_ROOT=%s", CODE_ROOT)
-    log.info("Python %s", sys.version.split()[0])
+    log.info("Python %s (fxjefe=3.11, fxjefe38=3.8.10)", sys.version.split()[0])
     try:
         stages = load_manifest(CODE_ROOT)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         log.error("pipeline manifest rejected: %s", exc)
         return 2
-    return execute(ctx, stages)
+    try:
+        verified = verify_prelude(ctx)
+        if verified != 0:
+            return verified
+        return execute(ctx, stages)
+    finally:
+        _stop_server(ctx)
 
 
 if __name__ == "__main__":

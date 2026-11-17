@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -37,10 +38,22 @@ def _clean_env(extra=None):
     return env
 
 
+def _free_port():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
 def _project(root, ftmo=None):
-    shutil.copy(str(REPO / "config.json"), str(root / "config.json"))
+    cfg = json.loads((REPO / "config.json").read_text(encoding="utf-8"))
+    port = _free_port()
+    cfg["api_port"] = port
+    cfg["ai_server_url"] = "http://127.0.0.1:{0}".format(port)
+    (root / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
     if ftmo is not None:
-        (root / "ftmo_config.json").write_text(json.dumps(ftmo), encoding="utf-8")
+        (root / "configftmo.json").write_text(json.dumps(ftmo), encoding="utf-8")
 
 
 def _run(root, extra_env=None, live=False):
@@ -274,7 +287,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn(str(root), output)
             self.assertIn("no order", output)
             self.assertIn("order_sent=False", output)
-            self.assertIn("script=margin_precheck.py", output)
+            self.assertIn("script=strategy_loop.py", output)
             self.assertFalse((root / "Logs" / "paper_orders.jsonl").exists())
 
     def test_missing_ftmo_config_stops_before_mt5(self):
@@ -299,7 +312,7 @@ class PipelineTests(unittest.TestCase):
             output = proc.stdout + proc.stderr
             self.assertNotEqual(proc.returncode, 0, output)
             self.assertIn("FTMO breach", output)
-            self.assertNotIn("script=margin_precheck.py", output)
+            self.assertNotIn("script=strategy_loop.py", output)
 
     def test_live_without_terminal_stops_before_execution(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -312,7 +325,7 @@ class PipelineTests(unittest.TestCase):
             }, live=True)
             output = proc.stdout + proc.stderr
             self.assertNotEqual(proc.returncode, 0, output)
-            self.assertNotIn("script=margin_precheck.py", output)
+            self.assertNotIn("script=strategy_loop.py", output)
 
     def test_sources_do_not_hardcode_credentials(self):
         assigned = re.compile(r"(?i)(account|login|password)\s*=\s*['\"][^'\"]+['\"]")
@@ -321,9 +334,184 @@ class PipelineTests(unittest.TestCase):
             if any(part in path.parts for part in (".git", "tests")):
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
-            self.assertNotIn("order_send(", text, path.name)
             self.assertIsNone(assigned.search(text), path.name)
             self.assertIsNone(numbered.search(text), path.name)
+
+
+class ContractTests(unittest.TestCase):
+    def test_hash_demo_reverse_changes_only_ordered(self):
+        import feature_hash
+        forward = ["spread", "sentiment"]
+        backward = list(reversed(forward))
+        self.assertTrue(feature_hash.hashes_equal(forward, backward, mode="set"))
+        self.assertFalse(feature_hash.hashes_equal(forward, backward, mode="ordered"))
+        pair = feature_hash.feature_hash_pair(["b", "a", "b"])
+        self.assertEqual(pair["count"], 3)
+        self.assertEqual(pair["unique"], 2)
+        self.assertEqual(len(pair["hash_set_short"]), 16)
+        self.assertEqual(feature_hash.canonical_bytes(["a", "b"], mode="set"), b"a\nb")
+        self.assertEqual(feature_hash.canonical_bytes(["b", "a"], mode="ordered"), b"b\na")
+
+    def test_empty_roles_are_ignored(self):
+        import feature_hash
+        ok, info = feature_hash.all_roles_match(
+            {"model": ["price", "atr"], "ea": ["atr", "price"], "server": [], "predict_mq5": ["price", "atr"]},
+            mode="set",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(info["reference"], "model")
+        self.assertNotIn("server", info["mismatches"])
+
+    def test_align_missing_keys_are_zero_and_28_fails(self):
+        import feature_hash
+        contract = json.loads((REPO / "config.json").read_text(encoding="utf-8"))["features"]
+        self.assertEqual(len(contract), 29)
+        vector = feature_hash.align_feature_vector({"price": 1.5}, contract)
+        self.assertEqual(len(vector), 29)
+        self.assertEqual(vector[0], 1.5)
+        self.assertEqual(vector[1], 0.0)
+        message = feature_hash.require_model_width(28, 29)
+        self.assertIsNotNone(message)
+        self.assertIn("28", message)
+
+    def test_signal_stage_fails_loudly_on_28_inputs(self):
+        import run_pipeline
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _project(root, {"max_drawdown_percent": 6.66})
+            models = root / "models"
+            models.mkdir()
+            (models / "demo.signature.json").write_text(json.dumps({"n_inputs": 28}), encoding="utf-8")
+            module = run_pipeline.load_module("runtime/signal_gate.py", REPO)
+            ctx = {
+                "project_root": root,
+                "dry_run": True,
+                "config": json.loads((root / "config.json").read_text(encoding="utf-8")),
+                "paths": {"models_path": str(models)},
+                "features": json.loads((REPO / "config.json").read_text(encoding="utf-8"))["features"],
+            }
+            self.assertEqual(module.run(ctx), 1)
+            self.assertFalse(ctx["signal_emit"])
+
+    def test_configftmo_is_primary_and_drawdown_alone_is_enough(self):
+        import ftmo_rules
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ftmo_config.json").write_text(json.dumps({"max_drawdown_percent": 1}), encoding="utf-8")
+            (root / "configftmo.json").write_text(
+                (REPO / "configftmo.example.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            rules = ftmo_rules.find_ftmo_config(root, {})
+            self.assertTrue(str(rules["source"]).endswith("configftmo.json"))
+            self.assertAlmostEqual(rules["max_drawdown_percent"], 6.66)
+            self.assertAlmostEqual(rules["risk_percent"], 33.3)
+            self.assertAlmostEqual(rules["profit_target_percent"], 11.1)
+            self.assertFalse(rules["close_positions_on_stop"])
+            self.assertEqual(rules["account"], "demo-200k")
+            self.assertEqual(rules["account_balance_ref"], 200000)
+            self.assertEqual(rules["python_executable"], "fxjefe")
+            ctx = {"project_root": root, "config": {}, "dry_run": True}
+            self.assertEqual(ftmo_rules.run(ctx), 0)
+
+    def test_drawdown_and_profit_block_entries_without_closing(self):
+        import ftmo_rules
+        rules = {
+            "found": True,
+            "source": "test",
+            "max_drawdown_percent": 6.66,
+            "profit_target_percent": 11.1,
+            "account_balance_ref": 200000,
+            "close_positions_on_stop": False,
+        }
+        stopped = {
+            "project_root": Path("."),
+            "dry_run": True,
+            "ftmo": rules,
+            "account": {"equity": 186680.0, "balance": 186680.0},
+        }
+        self.assertEqual(ftmo_rules.run_gate(stopped), 1)
+        self.assertTrue(stopped["block_new_entries"])
+        self.assertFalse(stopped["close_positions"])
+        target = {
+            "project_root": Path("."),
+            "dry_run": True,
+            "ftmo": rules,
+            "account": {"equity": 222200.0, "balance": 222200.0},
+        }
+        self.assertEqual(ftmo_rules.run_gate(target), 1)
+        self.assertTrue(target["block_new_entries"])
+        self.assertFalse(target["close_positions"])
+
+    def test_paper_does_not_send_and_live_does_after_gate(self):
+        import run_pipeline
+        module = run_pipeline.load_module("strategy_loop.py", REPO)
+
+        class Tick(object):
+            bid = 1.1
+            ask = 1.1002
+
+        class Info(object):
+            trade_contract_size = 100000.0
+
+        class Result(object):
+            retcode = 10009
+
+        class Fake(object):
+            ORDER_TYPE_BUY = 0
+            ORDER_TYPE_SELL = 1
+            TRADE_ACTION_DEAL = 1
+            ORDER_TIME_GTC = 0
+            ORDER_FILLING_IOC = 1
+
+            def __init__(self):
+                self.sent = 0
+                self.closed = 0
+
+            def order_send(self, request):
+                self.sent += 1
+                return Result()
+
+            def order_calc_margin(self, order_type, symbol, volume, price):
+                return 100.0 * volume
+
+            def symbol_info(self, symbol):
+                return Info()
+
+            def symbol_info_tick(self, symbol):
+                return Tick()
+
+            def positions_get(self):
+                self.closed += 1
+                return []
+
+        example = json.loads((REPO / "configftmo.example.json").read_text(encoding="utf-8"))
+        example["symbols"] = ["EURUSD"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = {
+                "project_root": root,
+                "ftmo": example,
+                "ftmo_clear": True,
+                "signal_emit": True,
+                "block_new_entries": False,
+                "config": {"features": ["price", "atr"], "min_confidence_threshold": 0.77},
+                "local_prediction": {"signal": "buy", "confidence": 0.9},
+                "account": {"equity": 200000.0, "balance": 200000.0, "margin": 0.0, "margin_free": 200000.0},
+            }
+            fake = Fake()
+            paper = dict(base)
+            paper.update({"dry_run": True, "mt5": fake, "mt5_connected": True})
+            self.assertEqual(module.run(paper), 0)
+            self.assertEqual(fake.sent, 0)
+            self.assertEqual(fake.closed, 0)
+            self.assertFalse(paper["order_sent"])
+            live = dict(base)
+            live.update({"dry_run": False, "mt5": fake, "mt5_connected": True})
+            self.assertEqual(module.run(live), 0)
+            self.assertGreater(fake.sent, 0)
+            self.assertEqual(fake.closed, 0)
+            self.assertTrue(live["order_sent"])
 
 
 if __name__ == "__main__":
