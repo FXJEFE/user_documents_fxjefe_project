@@ -56,10 +56,12 @@ def _project(root, ftmo=None):
         (root / "configftmo.json").write_text(json.dumps(ftmo), encoding="utf-8")
 
 
-def _run(root, extra_env=None, live=False):
+def _run(root, extra_env=None, paper=True, extra_args=None):
     cmd = [sys.executable, str(REPO / "run_pipeline.py"), "--project-dir", str(root)]
-    if live:
-        cmd.append("--live")
+    if paper:
+        cmd.append("--paper")
+    if extra_args:
+        cmd.extend(extra_args)
     return subprocess.run(
         cmd,
         cwd=str(root),
@@ -318,14 +320,52 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _project(root, {"max_daily_loss_percent": 5, "max_total_drawdown_percent": 10})
+            (root / "models").mkdir()
+            (root / "models" / "placeholder.pkl").write_bytes(b"not-a-real-model")
             proc = _run(root, {
                 "FXJEFE_ACCOUNT_EQUITY": "10000",
                 "FXJEFE_DAY_START_EQUITY": "10000",
                 "FXJEFE_INITIAL_BALANCE": "10000",
-            }, live=True)
+                "MT5_ACCOUNT": "1",
+                "MT5_PASSWORD": "test-only",
+                "MT5_SERVER": "Demo",
+            }, paper=False)
             output = proc.stdout + proc.stderr
             self.assertNotEqual(proc.returncode, 0, output)
+            self.assertIn("LIVE MODE", output)
+            self.assertIn("MetaTrader5 is not installed", output)
             self.assertNotIn("script=strategy_loop.py", output)
+            self.assertNotIn("test-only", output)
+
+    def test_live_default_fails_closed_without_rules_or_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _project(root, ftmo=None)
+            missing_rules = _run(root, paper=False)
+            text = missing_rules.stdout + missing_rules.stderr
+            self.assertNotEqual(missing_rules.returncode, 0, text)
+            self.assertIn("LIVE MODE", text)
+            self.assertIn("configftmo.json", text)
+            self.assertNotIn("script=mt5_connection.py", text)
+            _project(root, {"max_drawdown_percent": 6.66})
+            missing_creds = _run(root, paper=False, extra_args=["--live"])
+            creds_text = missing_creds.stdout + missing_creds.stderr
+            self.assertNotEqual(missing_creds.returncode, 0, creds_text)
+            self.assertIn("MT5_ACCOUNT", creds_text)
+            self.assertIn("LIVE MODE", creds_text)
+
+    def test_dry_run_alias_stays_paper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _project(root, {"max_drawdown_percent": 6.66, "account_balance_ref": 200000})
+            proc = _run(root, {
+                "FXJEFE_ACCOUNT_EQUITY": "200000",
+                "FXJEFE_INITIAL_BALANCE": "200000",
+            }, paper=False, extra_args=["--dry-run"])
+            output = proc.stdout + proc.stderr
+            self.assertEqual(proc.returncode, 0, output)
+            self.assertIn("PAPER MODE", output)
+            self.assertNotIn("LIVE MODE", output)
 
     def test_sources_do_not_hardcode_credentials(self):
         assigned = re.compile(r"(?i)(account|login|password)\s*=\s*['\"][^'\"]+['\"]")

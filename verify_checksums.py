@@ -97,7 +97,7 @@ def run(ctx: Dict[str, Any]) -> int:
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(description="Verify SHA256 checksums under PROJECT_ROOT")
     parser.add_argument("--project-dir", default=None)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--paper", "--dry-run", action="store_true", dest="dry_run")
     parser.add_argument("--generate", action="store_true", help="write checksums.json for this tree")
     args = parser.parse_args(argv)
     if args.generate:

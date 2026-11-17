@@ -413,13 +413,13 @@ def run_gate(ctx: Dict[str, Any]) -> int:
     if missing_observation:
         ctx["ftmo_clear"] = False
         ctx["orders_allowed"] = False
-        if ctx.get("dry_run", True):
+        if ctx.get("dry_run", False):
             log.info("FTMO gate could not be fully evaluated; paper mode will not send orders")
             return 0
         log.error("live mode requires an account snapshot to evaluate FTMO rules")
         return 1
     ctx["ftmo_clear"] = True
-    ctx["orders_allowed"] = bool(ctx.get("signal_emit")) and not ctx.get("dry_run", True)
+    ctx["orders_allowed"] = bool(ctx.get("signal_emit")) and not ctx.get("dry_run", False)
     log.info("FTMO gate clear; orders_allowed=%s", ctx["orders_allowed"])
     return 0
 

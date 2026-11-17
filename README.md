@@ -40,7 +40,7 @@ setup_windows.bat
 run_pipeline.bat
 ```
 
-`run_pipeline.bat` is dry-run/paper mode. It does not send orders. Pass `--live` only when you intend to leave paper mode; this checkout still refuses `order_send`.
+`run_pipeline.bat` is **LIVE MODE**. It sends orders after `configftmo.json`, `MT5_ACCOUNT`, `MT5_PASSWORD`, and `MT5_SERVER` are present and the FTMO, margin, feature-hash, and MT5 gates pass. Add `--paper` (or `--dry-run`) for a run that does not send orders. `--live` is accepted and changes nothing.
 
 Override the project directory (must already exist and contain this repo):
 
@@ -57,7 +57,7 @@ python3.8 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip setuptools wheel
 pip install -r requirements_linux.txt
-python run_pipeline.py --project-dir "$PWD"
+python run_pipeline.py --paper --project-dir "$PWD"
 ```
 
 On macOS use `requirements_mac.txt` instead of `requirements_linux.txt`.
@@ -75,16 +75,16 @@ Edit `.env` with MT5 account values locally. Never commit `.env`.
 `run_pipeline.py` resolves `PROJECT_ROOT` (`--project-dir`, then `FXJEFE_PROJECT_DIR`, then legacy `FXJEFE_PROJECT_ROOT`, then `Path.home() / "Documents" / "FXJEFE_Project"`), logs that path, and exits if the directory is missing. Stage order is `pipeline_manifest.json`:
 
 1. `path_resolver.py`, `validate_config.py`, `ftmo_rules.py` — root, config, FTMO rules
-2. `mt5_connection.py` — terminal health (paper mode if MetaTrader5 is absent)
+2. `mt5_connection.py` — terminal health (required in live mode)
 3. `data_stage.py`, `audit_config_paths.py`
 4. `feature_hash.py`, `realized_vol_features.py`, `garch_async.py`, `garch_multistep.py`
 5. `feature_importance_nan.py` — no fit while `skip_training_in_pipeline` is true
 6. `runtime/signal_gate.py`, `trade_policy_config.py`
 7. `ftmo_rules.py` `run_gate` — blocks the pipeline on a breach
-8. `margin_precheck.py` — paper execution, no `order_send`
+8. `strategy_loop.py` — sends orders in live mode; `--paper` records the decision only
 9. `mt5_latency_bench.py`, `verify_checksums.py`
 
-FTMO percents are not hardcoded. Put them in `ftmo_config.json` (or `ftmoconfig.json` / `FTMOConfig.json` / the same names as `.ini` or a literal dict in `.py`) under `PROJECT_ROOT`. Credentials stay in `MT5_ACCOUNT`, `MT5_PASSWORD`, `MT5_SERVER`, and `MT5_PATH`.
+Copy `configftmo.example.json` to `configftmo.json`. Live mode fails closed without that file. Credentials stay in `MT5_ACCOUNT`, `MT5_PASSWORD`, `MT5_SERVER`, and optional `MT5_PATH`.
 
 Scripts named by older manifests (`mt5_data_sync.py`, `train_models.py`, `ai_server.py`, `pipelinerun_production.py`, `runtime_lock.py`, and the rest) are not in this checkout.
 

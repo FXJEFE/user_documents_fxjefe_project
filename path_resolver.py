@@ -141,7 +141,7 @@ def resolve(root: Optional[Path] = None) -> Dict[str, str]:
     }
 
 
-def build_context(cli_dir: Optional[str] = None, live: bool = False) -> Dict[str, Any]:
+def build_context(cli_dir: Optional[str] = None, live: bool = True) -> Dict[str, Any]:
     root = resolve_project_root(cli_dir, require_exists=True)
     return {
         "project_root": root,
@@ -154,14 +154,29 @@ def build_context(cli_dir: Optional[str] = None, live: bool = False) -> Dict[str
     }
 
 
+def add_mode_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--paper",
+        "--dry-run",
+        action="store_true",
+        dest="paper",
+        help="paper mode: do not send orders",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="accepted for compatibility; live is already the default",
+    )
+
+
 def stage_main(run, argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(description=(getattr(run, "__doc__", None) or "FXJEFE stage"))
     parser.add_argument("--project-dir", default=None)
-    parser.add_argument("--live", action="store_true", help="disable dry-run/paper mode")
+    add_mode_arguments(parser)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        ctx = build_context(args.project_dir, live=args.live)
+        ctx = build_context(args.project_dir, live=not args.paper)
     except ProjectRootError as exc:
         print("[FATAL] {0}".format(exc), file=sys.stderr)
         return 2

@@ -61,7 +61,7 @@ def run(ctx: Dict[str, Any]) -> int:
     Login, password, server, and terminal path are read from MT5_* environment
     variables. They are never hardcoded and the login is not written to the log.
     """
-    dry_run = bool(ctx.get("dry_run", True))
+    dry_run = bool(ctx.get("dry_run", False))
     mt5 = ctx.get("mt5") if ctx.get("mt5") is not None else _import_mt5()
     if mt5 is None:
         ctx["mt5_connected"] = False
@@ -84,8 +84,12 @@ def run(ctx: Dict[str, Any]) -> int:
         kwargs["password"] = password
         kwargs["server"] = server
         log.info("MT5 initialize using environment credentials (login not logged)")
-    else:
+    elif dry_run:
         log.info("MT5 initialize using the terminal session already logged in")
+    else:
+        log.error("LIVE MODE requires MT5_ACCOUNT, MT5_PASSWORD, and MT5_SERVER")
+        ctx["mt5_connected"] = False
+        return 1
     try:
         ok = bool(mt5.initialize(**kwargs))
     except Exception as exc:

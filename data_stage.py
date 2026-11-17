@@ -46,7 +46,7 @@ def run(ctx: Dict[str, Any]) -> int:
         "historical csv not found: {0}. This checkout has no mt5_data_sync.py; "
         "bars are not downloaded here.".format(path)
     )
-    if ctx.get("dry_run", True):
+    if ctx.get("dry_run", False):
         log.info(message)
         return 0
     log.error(message)

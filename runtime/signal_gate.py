@@ -118,7 +118,14 @@ def run(ctx) -> int:
     """Refuse to emit when the featureset contract does not match, and fail on a 28-input model."""
     all_roles_match = _feature_hash.all_roles_match
     require_model_width = _feature_hash.require_model_width
-    cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else {}
+    cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else None
+    if cfg is None:
+        from path_resolver import load_config
+        try:
+            cfg = load_config(ctx["project_root"])
+        except (OSError, ValueError):
+            cfg = {}
+        ctx["config"] = cfg
     contract = list(ctx.get("features") or cfg.get("features") or [])
     for width in _signature_widths(ctx):
         message = require_model_width(width, len(contract))
@@ -146,7 +153,7 @@ def run(ctx) -> int:
     log.info("signal_gate emit=%s model_loaded=%s match=%s reasons=%s", ctx["signal_emit"], loaded, matched, gate_info.get("reasons"))
     if ctx["signal_emit"]:
         return 0
-    if not ctx.get("dry_run", True) and cfg.get("signal_require_model_loaded", True) and not loaded:
+    if not ctx.get("dry_run", False) and cfg.get("signal_require_model_loaded", True) and not loaded:
         log.error("live mode requires a model file under the models path")
         return 1
     return 0

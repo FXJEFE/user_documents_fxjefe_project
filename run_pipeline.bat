@@ -14,5 +14,15 @@ if not exist "%ROOT%\fxjefe\Scripts\activate.bat" (
 )
 call "%ROOT%\fxjefe\Scripts\activate.bat"
 cd /d "%ROOT%"
+echo %* | findstr /i /c:"--paper" /c:"--dry-run" >nul
+if errorlevel 1 (
+    echo ============================================================
+    echo LIVE MODE
+    echo Real orders are sent after the FTMO gate and margin guard.
+    echo Pass --paper to run without sending orders.
+    echo ============================================================
+) else (
+    echo PAPER MODE
+)
 python run_pipeline.py --project-dir "%ROOT%" %*
 exit /b %ERRORLEVEL%

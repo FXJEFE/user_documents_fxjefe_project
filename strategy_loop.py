@@ -3,7 +3,8 @@
 """One pass over configured symbols and timeframes.
 
 Paper mode records the decision and does not call order_send.
-order_send runs only when --live is set and the FTMO gate has cleared.
+order_send runs in the default live mode after the FTMO gate has cleared.
+Pass --paper or --dry-run to skip order_send.
 """
 from __future__ import annotations
 
@@ -206,7 +207,7 @@ def _record(ctx: Dict[str, Any], row: Dict[str, Any]) -> None:
 
 
 def run(ctx: Dict[str, Any]) -> int:
-    dry_run = bool(ctx.get("dry_run", True))
+    dry_run = bool(ctx.get("dry_run", False))
     rules = ctx.get("ftmo") or {}
     ctx["order_sent"] = False
     ctx["close_positions"] = bool(rules.get("close_positions_on_stop"))

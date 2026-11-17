@@ -3,7 +3,7 @@
   "venv_dir": "fxjefe",
   "python38_venv": "fxjefe38",
   "skip_none": true,
-  "dry_run_default": true,
+  "dry_run_default": false,
   "python": "3.11",
   "python38": "3.8.10",
   "group_order": [

@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """Start the FXJEFE MT5 pipeline stages in dependency order.
 
-Default mode is dry-run/paper: no order is sent. A stage that returns non-zero
-stops the pipeline. FTMO limits are read from an FTMO config file; they are not
-invented when that file is missing.
+Default mode is LIVE: real orders are sent after the gates pass. Pass --paper
+or --dry-run to record decisions without order_send. --live is accepted and
+does not change that default. A stage that returns non-zero stops the pipeline.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import argparse
 import importlib.util
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fxjefe_paths import venv_python
-from path_resolver import ProjectRootError, build_context, load_config
+from path_resolver import ProjectRootError, add_mode_arguments, build_context, load_config
 
 CODE_ROOT = Path(__file__).resolve().parent
 GROUP_ORDER = (
@@ -144,8 +145,8 @@ def _run_stage(ctx: Dict[str, Any], stage: Dict[str, Any]) -> int:
         other = venv_python(ctx["project_root"], "fxjefe38")
         if other and Path(other).resolve() != Path(sys.executable).resolve():
             cmd = [str(other), str(code_root / script), "--project-dir", str(ctx["project_root"])]
-            if not ctx.get("dry_run", True):
-                cmd.append("--live")
+            if ctx.get("dry_run"):
+                cmd.append("--paper")
             log.info("fxjefe38 %s", " ".join(cmd))
             completed = subprocess.run(cmd)
             return int(completed.returncode)
@@ -180,6 +181,8 @@ def verify_prelude(ctx: Dict[str, Any]) -> int:
     )
     for script, folder in steps:
         cmd = [sys.executable, str(code_root / script), "--project-dir", str(folder)]
+        if ctx.get("dry_run"):
+            cmd.append("--paper")
         log.info("verify %s", " ".join(cmd))
         completed = subprocess.run(cmd)
         if completed.returncode != 0:
@@ -219,16 +222,46 @@ def _stop_server(ctx: Dict[str, Any]) -> None:
         proc.kill()
 
 
+LIVE_BANNER = (
+    "============================================================\n"
+    "LIVE MODE\n"
+    "Real orders are sent only after configftmo.json, MT5 credentials,\n"
+    "the FTMO gate, the margin guard, the feature-hash match, and MT5 health pass.\n"
+    "============================================================"
+)
+
+
+def require_live_prereqs(root: Path) -> int:
+    """Live mode refuses to continue without the rules file and MT5 env credentials."""
+    rules = root / "configftmo.json"
+    if not rules.is_file():
+        log.error("LIVE MODE requires configftmo.json at %s", rules)
+        print("[FATAL] LIVE MODE requires configftmo.json at {0}".format(rules), file=sys.stderr)
+        return 1
+    missing = [
+        name for name in ("MT5_ACCOUNT", "MT5_PASSWORD", "MT5_SERVER")
+        if not os.environ.get(name, "").strip()
+    ]
+    if missing:
+        log.error("LIVE MODE requires %s in the environment. Values are not printed.", ", ".join(missing))
+        print(
+            "[FATAL] LIVE MODE requires {0} in the environment. Values are not printed.".format(", ".join(missing)),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def main(argv: List[str] = None) -> int:
-    parser = argparse.ArgumentParser(description="FXJEFE MT5 pipeline (dry-run by default)")
+    parser = argparse.ArgumentParser(description="FXJEFE MT5 pipeline (live by default)")
     parser.add_argument("--project-dir", default=None, help="PROJECT_ROOT. Overrides FXJEFE_PROJECT_DIR.")
-    parser.add_argument("--live", action="store_true", help="disable dry-run/paper mode")
+    add_mode_arguments(parser)
     args = parser.parse_args(argv)
     version_rc = check_interpreter()
     if version_rc != 0:
         return version_rc
     try:
-        ctx = build_context(args.project_dir, live=args.live)
+        ctx = build_context(args.project_dir, live=not args.paper)
     except ProjectRootError as exc:
         print("[FATAL] {0}".format(exc), file=sys.stderr)
         return 2
@@ -237,6 +270,15 @@ def main(argv: List[str] = None) -> int:
     log.info("PROJECT_ROOT=%s", ctx["project_root"])
     log.info("CODE_ROOT=%s", CODE_ROOT)
     log.info("Python %s (fxjefe=3.11, fxjefe38=3.8.10)", sys.version.split()[0])
+    if ctx.get("dry_run"):
+        log.info("PAPER MODE")
+        print("PAPER MODE")
+    else:
+        log.info(LIVE_BANNER)
+        print(LIVE_BANNER)
+        prereq = require_live_prereqs(ctx["project_root"])
+        if prereq != 0:
+            return prereq
     try:
         stages = load_manifest(CODE_ROOT)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
