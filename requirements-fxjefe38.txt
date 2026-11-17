@@ -9,6 +9,6 @@ requests==2.32.3
 xgboost==2.0.3
 arch==5.6.0
 optuna==3.6.1
-tensorflow==2.10.1
+tensorflow==2.12.1
 # Prebuilt cp38 win_amd64 wheel. PyPI has no TA-Lib==0.4.38 for this interpreter.
 https://github.com/cgohlke/talib-build/releases/download/v0.4.28/TA_Lib-0.4.28-cp38-cp38-win_amd64.whl
