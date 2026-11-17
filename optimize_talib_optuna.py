@@ -3,17 +3,39 @@
 """Optimize key TA-Lib periods using historical CSV from config.json."""
 from __future__ import annotations
 import json
+import logging
+import sys
 from pathlib import Path
-import numpy as np
-import optuna
-import pandas as pd
-import talib
-from sklearn.metrics import log_loss
-from sklearn.model_selection import TimeSeriesSplit
-from xgboost import XGBClassifier
+
+log = logging.getLogger("fxjefe.optuna")
+
 
 def project_root() -> Path:
-    return Path.home() / "Documents" / "FXJEFE_Project"
+    from path_resolver import resolve_project_root
+    cli = None
+    if "--project-dir" in sys.argv:
+        index = sys.argv.index("--project-dir")
+        if index + 1 < len(sys.argv):
+            cli = sys.argv[index + 1]
+    return resolve_project_root(cli, require_exists=True)
+
+
+def _bind_libs():
+    global np, optuna, pd, talib, log_loss, TimeSeriesSplit, XGBClassifier
+    import numpy as _np
+    import optuna as _optuna
+    import pandas as _pd
+    import talib as _talib
+    from sklearn.metrics import log_loss as _log_loss
+    from sklearn.model_selection import TimeSeriesSplit as _TimeSeriesSplit
+    from xgboost import XGBClassifier as _XGBClassifier
+    np = _np
+    optuna = _optuna
+    pd = _pd
+    talib = _talib
+    log_loss = _log_loss
+    TimeSeriesSplit = _TimeSeriesSplit
+    XGBClassifier = _XGBClassifier
 
 def load_config(root: Path) -> dict:
     return json.loads((root / "config.json").read_text(encoding="utf-8"))
@@ -56,7 +78,18 @@ def features_talib(df, rsi_p, atr_p, fast, slow, sig):
     return np.column_stack([c, atr, rsi, hist, adx])
 
 def main():
-    root = project_root()
+    try:
+        _bind_libs()
+    except ImportError as exc:
+        print("optimize_talib_optuna missing dependency: {0}".format(exc), file=sys.stderr)
+        print("TA-Lib has no official Windows wheel for Python 3.8; install the C library separately.", file=sys.stderr)
+        return 1
+    try:
+        root = project_root()
+    except Exception as exc:
+        print("[FATAL] {0}".format(exc), file=sys.stderr)
+        return 2
+    print("PROJECT_ROOT={0}".format(root))
     cfg = load_config(root)
     csv_path = resolve_csv(root, cfg)
     print("csv", csv_path)
@@ -101,6 +134,16 @@ def main():
     cfg.setdefault("historical_csv", "data/raw_ohlcv.csv")
     (root / "config.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     print("wrote", out)
+    return 0
+
+
+def run(ctx):
+    """Dry-run never rewrites config.json or fits a study."""
+    if ctx.get("dry_run", True):
+        log.info("optuna TA-Lib search skipped in dry-run")
+        return 0
+    return main()
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

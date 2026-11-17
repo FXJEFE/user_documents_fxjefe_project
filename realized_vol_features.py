@@ -2,26 +2,47 @@
 # -*- coding: utf-8 -*-
 """Realized volatility features for FXJEFE."""
 from __future__ import annotations
-import numpy as np
-import pandas as pd
 
-def log_returns(close: pd.Series) -> pd.Series:
+import logging
+from typing import Any, Dict, Optional
+
+from path_resolver import historical_csv, stage_main
+
+log = logging.getLogger("fxjefe.features")
+
+_np = None
+_pd = None
+
+
+def _libs():
+    global _np, _pd
+    if _np is None or _pd is None:
+        import numpy as np
+        import pandas as pd
+        _np = np
+        _pd = pd
+    return _np, _pd
+
+def log_returns(close):
+    np, pd = _libs()
     c = pd.to_numeric(close, errors="coerce")
     r = np.log(c / c.shift(1))
     return r.replace([np.inf, -np.inf], np.nan)
 
-def realized_vol(close: pd.Series, window: int = 20, annualize: bool = False,
-                 periods_per_year: float = 252.0 * 24 * 12) -> pd.Series:
+def realized_vol(close, window: int = 20, annualize: bool = False,
+                 periods_per_year: float = 252.0 * 24 * 12):
+    np, pd = _libs()
     r = log_returns(close)
     rv = np.sqrt(r.pow(2).rolling(window, min_periods=max(2, window // 5)).sum())
     if annualize:
         rv = rv * np.sqrt(periods_per_year / window)
     return rv
 
-def realized_vol_std(close: pd.Series, window: int = 20) -> pd.Series:
+def realized_vol_std(close, window: int = 20):
     return log_returns(close).rolling(window, min_periods=max(2, window // 5)).std()
 
-def parkinson_vol(high: pd.Series, low: pd.Series, window: int = 20) -> pd.Series:
+def parkinson_vol(high, low, window: int = 20):
+    np, pd = _libs()
     h = pd.to_numeric(high, errors="coerce")
     l = pd.to_numeric(low, errors="coerce")
     hl = np.log(h / l).replace([np.inf, -np.inf], np.nan)
@@ -29,8 +50,8 @@ def parkinson_vol(high: pd.Series, low: pd.Series, window: int = 20) -> pd.Serie
     var = (hl.pow(2) * const).rolling(window, min_periods=max(2, window // 5)).mean()
     return np.sqrt(var)
 
-def garman_klass_vol(open_: pd.Series, high: pd.Series, low: pd.Series,
-                     close: pd.Series, window: int = 20) -> pd.Series:
+def garman_klass_vol(open_, high, low, close, window: int = 20):
+    np, pd = _libs()
     o = pd.to_numeric(open_, errors="coerce")
     h = pd.to_numeric(high, errors="coerce")
     l = pd.to_numeric(low, errors="coerce")
@@ -41,7 +62,8 @@ def garman_klass_vol(open_: pd.Series, high: pd.Series, low: pd.Series,
     var = term.rolling(window, min_periods=max(2, window // 5)).mean()
     return np.sqrt(var.clip(lower=0))
 
-def add_realized_vol_features(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+def add_realized_vol_features(df, window: int = 20):
+    np, pd = _libs()
     out = df.copy()
     cols = {str(c).lower(): c for c in out.columns}
     def col(name):
@@ -63,7 +85,44 @@ def add_realized_vol_features(df: pd.DataFrame, window: int = 20) -> pd.DataFram
             out[c] = pd.to_numeric(out[c], errors="coerce").replace([np.inf, -np.inf], np.nan).ffill().fillna(0.0)
     return out
 
-def last_realized_vol(df: pd.DataFrame, window: int = 20) -> float:
+def last_realized_vol(df, window: int = 20) -> float:
+    np, pd = _libs()
     tmp = add_realized_vol_features(df, window=window)
     v = tmp["realized_vol"].iloc[-1]
     return float(v) if np.isfinite(v) else 0.0
+
+
+def _csv_path(ctx: Dict[str, Any]):
+    if ctx.get("historical_csv"):
+        from pathlib import Path
+        return Path(ctx["historical_csv"])
+    return historical_csv(ctx["project_root"], ctx.get("config") or {})
+
+
+def run(ctx: Dict[str, Any]) -> int:
+    path = _csv_path(ctx)
+    if not path.is_file():
+        message = "realized vol skipped; historical csv missing: {0}".format(path)
+        if ctx.get("dry_run", True):
+            log.info(message)
+            return 0
+        log.error(message)
+        return 1
+    try:
+        np, pd = _libs()
+    except ImportError as exc:
+        log.error("numpy/pandas required for realized vol: %s", exc)
+        return 1
+    frame = pd.read_csv(path)
+    value = last_realized_vol(frame)
+    ctx["realized_vol"] = value
+    log.info("realized_vol=%s", value)
+    return 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

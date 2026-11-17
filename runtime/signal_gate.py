@@ -2,12 +2,24 @@
 # -*- coding: utf-8 -*-
 """Signal gate: emit only if model loaded + featureset matches EA, server, Predict.mq5, GenerateFeatures.mq5."""
 from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-try:
+log = logging.getLogger("fxjefe.signals")
+
+
+def _load_feature_hash():
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
     from feature_hash import feature_hash, hashes_equal
-except ImportError:
-    feature_hash = hashes_equal = None
+    return feature_hash, hashes_equal
+
+
+feature_hash, hashes_equal = _load_feature_hash()
 
 AUTO_ENABLED = True
 DEMO_COMMENT = "# DEMO: label only; does not disable systems."
@@ -50,6 +62,47 @@ def can_emit_signal(*, model_loaded: bool, model_features=None, ea_features=None
     info["reasons"].append("model loaded + featureset aligned")
     return True, info
 
+def _models_present(ctx) -> bool:
+    paths = ctx.get("paths") or {}
+    raw = paths.get("models_path")
+    folder = Path(raw) if raw else ctx["project_root"] / "models"
+    if not folder.is_dir():
+        return False
+    patterns = ("*.pkl", "*.joblib", "*.ubj", "*xgb*.json", "*model*.json")
+    return any(folder.glob(pattern) for pattern in patterns)
+
+
+def run(ctx) -> int:
+    """Gate signals. This checkout has no Predict.mq5 or GenerateFeatures.mq5, so those roles use the config feature list."""
+    cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else {}
+    feats = list(ctx.get("features") or cfg.get("features") or [])
+    loaded = _models_present(ctx)
+    ok, info = can_emit_signal(
+        model_loaded=loaded,
+        model_features=feats,
+        ea_features=feats,
+        server_features=feats,
+        predict_mq5_features=feats,
+        generatefeatures_mq5_features=feats,
+    )
+    ctx["signal_emit"] = bool(ok)
+    log.info("signal_gate emit=%s model_loaded=%s reasons=%s", ok, loaded, info.get("reasons"))
+    log.info("signal_gate feature roles use config.json; Predict.mq5 and GenerateFeatures.mq5 are not in this checkout")
+    if ctx.get("dry_run", True):
+        return 0
+    if cfg.get("signal_require_model_loaded", True) and not loaded:
+        log.error("live mode requires a model file under the models path")
+        return 1
+    return 0
+
+
+def main(argv=None) -> int:
+    code_root = Path(__file__).resolve().parent.parent
+    if str(code_root) not in sys.path:
+        sys.path.insert(0, str(code_root))
+    from path_resolver import stage_main
+    return stage_main(run, argv)
+
+
 if __name__ == "__main__":
-    f = ["price", "atr", "rsi"]
-    print(can_emit_signal(model_loaded=True, model_features=f, ea_features=f, server_features=f, predict_mq5_features=f, generatefeatures_mq5_features=f))
+    raise SystemExit(main())

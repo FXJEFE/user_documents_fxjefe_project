@@ -2,8 +2,14 @@
 # -*- coding: utf-8 -*-
 """Frequency/accuracy/cost policy for high-probability cheap candidates."""
 from __future__ import annotations
+
+import logging
 from dataclasses import dataclass, asdict
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from path_resolver import stage_main
+
+log = logging.getLogger("fxjefe.signals")
 
 @dataclass
 class TradePolicy:
@@ -38,3 +44,29 @@ def select_candidate(signal: str, confidence: float, spread_points: float, polic
     if spread_points > policy.max_spread_points:
         return {"take": False, "reason": "spread_cost"}
     return {"take": True, "reason": "ok", "confidence": confidence, "spread": spread_points}
+
+
+def run(ctx: Dict[str, Any]) -> int:
+    cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else {}
+    gate = cfg.get("min_confidence_threshold", TradePolicy().min_confidence)
+    try:
+        policy = TradePolicy(min_confidence=float(gate))
+    except (TypeError, ValueError):
+        log.error("min_confidence_threshold is not numeric")
+        return 1
+    decision = select_candidate("hold", 0.0, 0.0, policy)
+    ctx["policy"] = policy.to_dict()
+    ctx["trade_decision"] = decision
+    if decision.get("take"):
+        log.error("hold signal was accepted; refusing to continue")
+        return 1
+    log.info("trade_policy %s", decision)
+    return 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -2,8 +2,14 @@
 # -*- coding: utf-8 -*-
 """FXJEFE feature hashing — scalable featureset identity (UTF-8)."""
 from __future__ import annotations
-import hashlib, json
+import hashlib
+import json
+import logging
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from path_resolver import stage_main
+
+log = logging.getLogger("fxjefe.features")
 
 def normalize_features(names: Optional[Iterable[str]]) -> List[str]:
     if not names:
@@ -52,8 +58,25 @@ def snapshot_dict(names: Sequence[str], *, kind: str = "features") -> Dict[str, 
     pair = feature_hash_pair(feats)
     return {"kind": kind, "features": feats, "count": len(feats), "unique": len(set(feats)), **{k: pair[k] for k in pair if k.startswith("hash")}}
 
+def run(ctx: Dict[str, Any]) -> int:
+    cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else {}
+    feats = cfg.get("features") or []
+    if not isinstance(feats, list) or not feats:
+        log.error("config features list is empty")
+        return 1
+    ctx["features"] = [str(item) for item in feats]
+    log.info(
+        "feature_hash count=%s set=%s ordered=%s",
+        len(ctx["features"]),
+        feature_hash(ctx["features"], mode="set", length=16),
+        feature_hash(ctx["features"], mode="ordered", length=16),
+    )
+    return 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
+
 if __name__ == "__main__":
-    demo = ["price", "atr", "rsi", "macd_diff"]
-    print("set", feature_hash(demo, mode="set", length=16))
-    print("ordered", feature_hash(demo, mode="ordered", length=16))
-    print(all_roles_match({"model": demo, "ea": list(reversed(demo)), "server": demo}))
+    raise SystemExit(main())

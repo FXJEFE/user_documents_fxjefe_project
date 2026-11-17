@@ -2,8 +2,15 @@
 # -*- coding: utf-8 -*-
 """Local margin/volume/stops pre-checks before order_check/order_send."""
 from __future__ import annotations
+
+import json
+import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Dict, Optional
+
+from path_resolver import stage_main
+
+log = logging.getLogger("fxjefe.execution")
 
 @dataclass
 class PrecheckResult:
@@ -59,3 +66,38 @@ def precheck_local(mt5: Any, symbol: str, side: str, volume: float,
     if margin_est > free * max_margin_frac:
         return PrecheckResult(False, "margin_cap", volume=vol, margin_est=margin_est, free_margin=free)
     return PrecheckResult(True, "ok", volume=vol, margin_est=margin_est, free_margin=free)
+
+
+def run(ctx: Dict[str, Any]) -> int:
+    """Paper execution. This checkout never calls order_send."""
+    dry_run = bool(ctx.get("dry_run", True))
+    emit = bool(ctx.get("signal_emit"))
+    clear = bool(ctx.get("ftmo_clear"))
+    log.info("execution dry_run=%s signal_emit=%s ftmo_clear=%s", dry_run, emit, clear)
+    ctx["order_sent"] = False
+    if not emit or not clear:
+        log.info("execution: no order (signal or FTMO gate did not clear an order)")
+        return 0 if dry_run or not emit else 1
+    if dry_run:
+        log_dir = ctx["project_root"] / "Logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        record = {
+            "paper": True,
+            "order_send": False,
+            "signal_emit": emit,
+            "ftmo_clear": clear,
+        }
+        with (log_dir / "paper_orders.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+        log.info("execution: paper intent recorded; order_send not called")
+        return 0
+    log.error("refusing live order_send; this checkout has no order execution script")
+    return 1
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -28,34 +28,39 @@ git clone https://github.com/FXJEFE/user_documents_fxjefe_project.git FXJEFE_Pro
 cd FXJEFE_Project
 ```
 
-### 2. Python venv
+### 2. Python
 
-**macOS**
+The Windows MT5 pipeline targets **CPython 3.8.10, 64-bit**. `setup_windows.bat` installs that interpreter per-user when `py -3.8` is not already 3.8.10, creates `<PROJECT_ROOT>\.venv`, and installs `requirements.txt`.
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -U pip setuptools wheel
-pip install -r requirements_mac.txt
+**Windows**
+
+```bat
+cd /d %USERPROFILE%\Documents\FXJEFE_Project
+setup_windows.bat
+run_pipeline.bat
 ```
 
-**Linux**
+`run_pipeline.bat` is dry-run/paper mode. It does not send orders. Pass `--live` only when you intend to leave paper mode; this checkout still refuses `order_send`.
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -U pip setuptools wheel
-pip install -r requirements_linux.txt
+Override the project directory (must already exist and contain this repo):
+
+```bat
+set FXJEFE_PROJECT_DIR=D:\FXJEFE_Project
+setup_windows.bat
+run_pipeline.bat
 ```
 
-**Windows (PowerShell)**
+**macOS / Linux** (training and checks; MetaTrader5 itself is Windows-only)
 
-```powershell
-py -3.11 -m venv venv
-.\\venv\\Scripts\\Activate.ps1
+```bash
+python3.8 -m venv .venv
+source .venv/bin/activate
 python -m pip install -U pip setuptools wheel
-pip install -r requirements_win.txt
+pip install -r requirements_linux.txt
+python run_pipeline.py --project-dir "$PWD"
 ```
+
+On macOS use `requirements_mac.txt` instead of `requirements_linux.txt`.
 
 ### 3. Environment
 
@@ -65,30 +70,23 @@ cp .env.example .env
 
 Edit `.env` with MT5 account values locally. Never commit `.env`.
 
-### 4. Lock runtime (expect 200)
+### 4. Pipeline
 
-```bash
-python runtime_lock.py
-```
+`run_pipeline.py` resolves `PROJECT_ROOT` (`--project-dir`, then `FXJEFE_PROJECT_DIR`, then legacy `FXJEFE_PROJECT_ROOT`, then `Path.home() / "Documents" / "FXJEFE_Project"`), logs that path, and exits if the directory is missing. Stage order is `pipeline_manifest.json`:
 
-### 5. Feature hash + signal gate smoke test
+1. `path_resolver.py`, `validate_config.py`, `ftmo_rules.py` — root, config, FTMO rules
+2. `mt5_connection.py` — terminal health (paper mode if MetaTrader5 is absent)
+3. `data_stage.py`, `audit_config_paths.py`
+4. `feature_hash.py`, `realized_vol_features.py`, `garch_async.py`, `garch_multistep.py`
+5. `feature_importance_nan.py` — no fit while `skip_training_in_pipeline` is true
+6. `runtime/signal_gate.py`, `trade_policy_config.py`
+7. `ftmo_rules.py` `run_gate` — blocks the pipeline on a breach
+8. `margin_precheck.py` — paper execution, no `order_send`
+9. `mt5_latency_bench.py`, `verify_checksums.py`
 
-```bash
-python feature_hash.py
-python signal_gate.py
-```
+FTMO percents are not hardcoded. Put them in `ftmo_config.json` (or `ftmoconfig.json` / `FTMOConfig.json` / the same names as `.ini` or a literal dict in `.py`) under `PROJECT_ROOT`. Credentials stay in `MT5_ACCOUNT`, `MT5_PASSWORD`, `MT5_SERVER`, and `MT5_PATH`.
 
-### 6. Production pipeline (optional)
-
-```bash
-python pipelinerun_production.py
-```
-
-After first green FINAL:
-
-```bash
-python secure_strap.py
-```
+Scripts named by older manifests (`mt5_data_sync.py`, `train_models.py`, `ai_server.py`, `pipelinerun_production.py`, `runtime_lock.py`, and the rest) are not in this checkout.
 
 ---
 
@@ -109,8 +107,8 @@ python secure_strap.py
 UTF-8 only for `.py`, `.csv`, `.mq5`, `.mqh`, `.json`, configs.
 
 ```bash
-python encoding_utf8.py --fix
-python encoding_utf8.py --scan
+python runtime/encoding_utf8.py --fix --root .
+python runtime/encoding_utf8.py --scan --root .
 ```
 
 ---

@@ -2,12 +2,11 @@
 # -*- coding: utf-8 -*-
 """Scan all project .py files for config path usage."""
 from __future__ import annotations
-import json, os, re
+import json
 from pathlib import Path
+from typing import Any, Dict, Optional
 
-ROOT = Path.home() / "Documents" / "FXJEFE_Project"
-if not ROOT.is_dir():
-    ROOT = Path(__file__).resolve().parent
+from path_resolver import config_file, stage_main
 
 # Simple substring markers — avoid fragile regex escaping
 MARKERS = [
@@ -19,71 +18,81 @@ MARKERS = [
     "read_config",
 ]
 
-def effective_config() -> Path:
-    env = os.environ.get("FXJEFE_CONFIG", "").strip()
-    if env:
-        return Path(env).expanduser().resolve()
-    return (ROOT / "config.json").resolve()
+def effective_config(root: Path) -> Path:
+    return config_file(root)
 
-def scan_file(path: Path) -> dict:
+def scan_file(path: Path, root: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
-        return {"file": str(path.relative_to(ROOT)), "error": str(e)}
+        return {"file": str(path.relative_to(root)), "error": str(e)}
     hits = []
     for i, line in enumerate(text.splitlines(), 1):
         low = line.lower()
         if any(m.lower() in low or m in line for m in MARKERS):
             hits.append({"line": i, "text": line.strip()[:120]})
     return {
-        "file": str(path.relative_to(ROOT)).replace("\\", "/"),
+        "file": str(path.relative_to(root)).replace("\\", "/"),
         "mentions_config": len(hits) > 0,
         "hit_count": len(hits),
         "hits": hits[:8],
     }
 
-def main():
-    print("ROOT", ROOT)
-    cfg = effective_config()
+def run(ctx: Dict[str, Any]) -> int:
+    root = ctx["project_root"]
+    print("ROOT", root)
+    cfg = effective_config(root)
     print("EFFECTIVE_CONFIG", cfg)
     print("EXISTS", cfg.is_file())
-    if cfg.is_file():
-        try:
-            d = json.loads(cfg.read_text(encoding="utf-8"))
-            print("KEYS", len(d))
-            print("policy", d.get("feature_policy"))
-            print("gate", d.get("min_confidence_threshold"))
-            for k in ("log_path", "data_path", "models_path", "scripts_path", "historical_csv", "ai_server_url", "api_port"):
-                if k in d:
-                    print(f"  cfg[{k}]={d.get(k)!r}")
-        except Exception as e:
-            print("JSON_ERROR", e)
+    if not cfg.is_file():
+        print("[ERROR] config file missing")
+        return 1
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        print("KEYS", len(data))
+        print("policy", data.get("feature_policy"))
+        print("gate", data.get("min_confidence_threshold"))
+        for key in ("log_path", "data_path", "models_path", "scripts_path", "historical_csv", "ai_server_url", "api_port"):
+            if key in data:
+                print("  cfg[{0}]={1!r}".format(key, data.get(key)))
+    except Exception as exc:
+        print("JSON_ERROR", exc)
+        return 1
     print("---")
     rows = []
-    for p in sorted(ROOT.rglob("*.py")):
-        if any(x in p.parts for x in (".git", "fxjefe", "venv", "__pycache__", "site-packages")):
+    for path in sorted(root.rglob("*.py")):
+        if any(part in path.parts for part in (".git", "fxjefe", ".venv", "venv", "__pycache__", "site-packages")):
             continue
-        rows.append(scan_file(p))
-    with_cfg = [r for r in rows if r.get("mentions_config")]
-    without = [r for r in rows if not r.get("mentions_config") and not r.get("error")]
-    print(f"scripts_total={len(rows)} with_config_ref={len(with_cfg)} without={len(without)}")
+        rows.append(scan_file(path, root))
+    with_cfg = [row for row in rows if row.get("mentions_config")]
+    without = [row for row in rows if not row.get("mentions_config") and not row.get("error")]
+    print("scripts_total={0} with_config_ref={1} without={2}".format(len(rows), len(with_cfg), len(without)))
     print()
     print("=== SCRIPTS THAT REFERENCE CONFIG ===")
-    for r in with_cfg:
-        print(f"\n{r['file']}  hits={r['hit_count']}")
-        for h in r.get("hits") or []:
-            print(f"  L{h['line']}: {h['text']}")
+    for row in with_cfg:
+        print("\n{0}  hits={1}".format(row["file"], row["hit_count"]))
+        for hit in row.get("hits") or []:
+            print("  L{0}: {1}".format(hit["line"], hit["text"]))
     print()
     print("=== NO CONFIG REFERENCE ===")
-    for r in without:
-        print(r["file"])
-    out = ROOT / "production" / "config_path_audit.json"
+    for row in without:
+        print(row["file"])
+    out = root / "production" / "config_path_audit.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
-        "root": str(ROOT), "effective_config": str(cfg), "exists": cfg.is_file(),
-        "with_config": with_cfg, "without_config": [r["file"] for r in without],
+        "root": str(root),
+        "effective_config": str(cfg),
+        "exists": cfg.is_file(),
+        "with_config": with_cfg,
+        "without_config": [row["file"] for row in without],
     }, indent=2), encoding="utf-8")
     print("\nwrote", out)
+    return 0
+
+
+def main(argv: Optional[list] = None) -> int:
+    return stage_main(run, argv)
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

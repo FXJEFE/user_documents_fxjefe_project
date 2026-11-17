@@ -6,5 +6,7 @@
 *.csv text eol=lf working-tree-encoding=UTF-8
 *.json text eol=lf working-tree-encoding=UTF-8
 *.md text eol=lf working-tree-encoding=UTF-8
+*.bat text eol=crlf
+*.ps1 text eol=crlf
 *.pkl binary
 *.joblib binary
