@@ -171,7 +171,50 @@ fxjefe38\Scripts\python.exe ml_stack.py --fit-keras --project-dir %USERPROFILE%\
 
 `--fit-keras` needs the `fxjefe38` environment. It writes `artifacts/ml_stack/lstm_keras` and `ltdm_keras` only when those directories are absent.
 
-### Still checked on the Windows machine (LocalLarry)
+### Docker image
+
+The Linux image runs the paper pipeline on replay data and then stays up so the models-loaded ping can be checked. MetaTrader5 is a Windows package. This image does not attach to a terminal, send a live order, or install TensorFlow 2.10 / TA-Lib. Those stay on the Windows `fxjefe` and `fxjefe38` environments. Point a live terminal at the Windows host with `run_pipeline.bat`.
+
+Credentials are not copied into the image. `.dockerignore` drops `.env`, key files, `configftmo.json`, `models/`, and `*.pkl`. Pass `MT5_ACCOUNT`, `MT5_PASSWORD`, `MT5_SERVER`, and `MT5_PATH` at runtime. The paper command does not need them. `docker_entry.py` refuses `--live` because this container cannot reach the terminal.
+
+`stage_bundle.ps1` reads `C:\Users\FullSend\Documents\FXJEFE_Project` and copies `models\`, `data\*.csv`, and `configftmo.json` into a stage directory. It hashes the source before and after the copy and stops if a source file changes. It does not delete or edit the source. Files whose names or JSON keys look like credentials are skipped, and the secret value is not printed. The stage manifest is `manifest.sha256.json`.
+
+```bat
+cd /d %USERPROFILE%\Documents\FXJEFE_Project
+powershell -NoProfile -ExecutionPolicy Bypass -File stage_bundle.ps1 -Source C:\Users\FullSend\Documents\FXJEFE_Project -Destination .\stage
+```
+
+Build and run on the Linux machine. The health check requests `http://127.0.0.1:8081/health` and requires at least one loaded model.
+
+```bash
+docker build -t fxjefe:latest .
+docker compose up -d
+docker inspect --format '{{.State.Health.Status}}' fxjefe
+python health_client.py --project-dir . PING
+```
+
+Published ports are bound to `127.0.0.1` on the host. Open them further only with a firewall rule you choose.
+
+Private registry and a VPS, after `docker login` to that registry:
+
+```bash
+docker tag fxjefe:latest registry.example.com/fxjefe/fxjefe:latest
+docker push registry.example.com/fxjefe/fxjefe:latest
+```
+
+On the VPS:
+
+```bash
+docker login registry.example.com
+docker pull registry.example.com/fxjefe/fxjefe:latest
+docker tag registry.example.com/fxjefe/fxjefe:latest fxjefe:latest
+export MT5_ACCOUNT= MT5_PASSWORD= MT5_SERVER=
+docker compose up -d
+```
+
+Copy the `stage` directory to the VPS if you want the owner's models and CSV mounted read-only at `/stage`. The container copies them into its own tree and does not write back to the mount.
+
+## Still checked on the Windows machine (LocalLarry)
 
 MetaTrader5 live bars, the TA-Lib C library versus the numpy fallback, a real TensorFlow 2.10 fit, and merging `predict.mqh` into the terminal tree. Those pieces are not executed in CI.
 

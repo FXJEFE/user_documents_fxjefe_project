@@ -202,5 +202,29 @@ class PipelineReplayTests(unittest.TestCase):
             self.assertIn(str(cfg["zmq_health_port"]), output)
 
 
+class StageImportTests(unittest.TestCase):
+    def test_stage_import_is_read_only_and_skips_credential_json(self):
+        import docker_entry
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "stage"
+            app = base / "app"
+            (source / "models").mkdir(parents=True)
+            (source / "data").mkdir()
+            model = source / "models" / "keep.pkl"
+            model.write_bytes(b"original-model")
+            csv_path = source / "data" / "bars.csv"
+            csv_path.write_text("open,high,low,close,volume\n1,1,1,1,1\n", encoding="utf-8")
+            secret = source / "configftmo.json"
+            secret.write_text(json.dumps({"max_drawdown_percent": 5, "password": "do-not-copy"}), encoding="utf-8")
+            app.mkdir()
+            self.assertEqual(docker_entry.import_stage(source, app), 0)
+            self.assertEqual(model.read_bytes(), b"original-model")
+            self.assertEqual((app / "models" / "keep.pkl").read_bytes(), b"original-model")
+            self.assertTrue((app / "data" / "bars.csv").is_file())
+            self.assertFalse((app / "configftmo.json").exists())
+            self.assertIn("do-not-copy", secret.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

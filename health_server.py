@@ -187,7 +187,8 @@ def main(argv=None) -> int:
         cfg = {}
     zmq_port = args.zmq_port or int(cfg.get("zmq_health_port") or 5555)
     http_port = args.http_port or int(cfg.get("health_http_port") or 8081)
-    write_state(root, cfg, empty_state())
+    if not status_path(root, cfg).is_file():
+        write_state(root, cfg, empty_state())
     return HealthServer(root, cfg, zmq_port, http_port, bind_host(cfg)).serve()
 
 
