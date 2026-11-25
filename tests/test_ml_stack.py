@@ -202,6 +202,18 @@ class PipelineReplayTests(unittest.TestCase):
             self.assertIn(str(cfg["zmq_health_port"]), output)
 
 
+class ImageContextTests(unittest.TestCase):
+    def test_dockerignore_drops_secrets_and_keeps_bundled_models(self):
+        text = (REPO / ".dockerignore").read_text(encoding="utf-8")
+        self.assertIn(".env", text)
+        self.assertNotIn("\n*.pkl\n", "\n" + text)
+        self.assertIn("/models\n", text)
+        self.assertNotRegex(text, r"(?m)^models$")
+        self.assertTrue((REPO / "build_image.ps1").is_file())
+        self.assertTrue((REPO / "bundle" / "models" / ".gitkeep").is_file())
+        self.assertTrue((REPO / "bundle" / "data" / ".gitkeep").is_file())
+
+
 class StageImportTests(unittest.TestCase):
     def test_stage_import_is_read_only_and_skips_credential_json(self):
         import docker_entry

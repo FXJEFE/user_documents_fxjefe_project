@@ -171,52 +171,51 @@ fxjefe38\Scripts\python.exe ml_stack.py --fit-keras --project-dir %USERPROFILE%\
 
 `--fit-keras` needs the `fxjefe38` environment. It writes `artifacts/ml_stack/lstm_keras` and `ltdm_keras` only when those directories are absent.
 
-### Docker image
+### Personal Docker image
 
-The Linux image runs the paper pipeline on replay data and then stays up so the models-loaded ping can be checked. MetaTrader5 is a Windows package. This image does not attach to a terminal, send a live order, or install TensorFlow 2.10 / TA-Lib. Those stay on the Windows `fxjefe` and `fxjefe38` environments. Point a live terminal at the Windows host with `run_pipeline.bat`.
+One image runs the whole Linux runtime. Python 3.11 is the pipeline, the ZMQ health server (`5555`), the health JSON port (`8081`), and the golden HTTP server (`8080`). Python 3.8.10 lives at `/opt/fxjefe38` with TensorFlow 2.10.1, Keras 2.10.0, and TA-Lib 0.4.28. The TA-Lib C library 0.4.0 is compiled during the image build and is linked into both interpreters. `FXJEFE_PYTHON38` points the pipeline's 3.8 stages at that interpreter.
 
-Credentials are not copied into the image. `.dockerignore` drops `.env`, key files, `configftmo.json`, `models/`, and `*.pkl`. Pass `MT5_ACCOUNT`, `MT5_PASSWORD`, `MT5_SERVER`, and `MT5_PATH` at runtime. The paper command does not need them. `docker_entry.py` refuses `--live` because this container cannot reach the terminal.
+MetaTrader5's Python package does not import on Linux. The container runs the models, the health server, and the analytics loop, and the Windows terminal reaches them over ZMQ (`tcp://<host>:5555`) and HTTP (`http://<host>:8080/predict`, `http://<host>:8081/health`). Wine can start the MT5 terminal binary, and it still does not make `import MetaTrader5` succeed inside this image. Keep the terminal on Windows and point the EA at the published ports.
 
-`stage_bundle.ps1` reads `C:\Users\FullSend\Documents\FXJEFE_Project` and copies `models\`, `data\*.csv`, and `configftmo.json` into a stage directory. It hashes the source before and after the copy and stops if a source file changes. It does not delete or edit the source. Files whose names or JSON keys look like credentials are skipped, and the secret value is not printed. The stage manifest is `manifest.sha256.json`.
+`build_image.ps1` copies `models\` (pkl, joblib, h5, keras, scalers, signatures), `data\` CSV files, and config JSON from `C:\Users\FullSend\Documents\FXJEFE_Project` into `bundle\` with a read-only copy. It hashes each source file before and after the copy and stops if the source changes. It does not delete or edit the source. Credential file names and JSON keys are skipped, and the secret value is not printed. The checksum list is `bundle\manifest.sha256.json`. The script then builds and tags `fxjefe:latest`. Those bundled files are copied into `/app/models` and `/app/data` in the image. `.dockerignore` drops `.env`, key files, and the repo-root `models` directory so only the staged `bundle\` tree is baked in. `MT5_ACCOUNT`, `MT5_PASSWORD`, `MT5_SERVER`, `MT5_PATH`, and `FXJEFE_DASHBOARD_TOKEN` are read at runtime from the environment or an untracked `.env` file. Compose marks that file optional.
 
 ```bat
 cd /d %USERPROFILE%\Documents\FXJEFE_Project
-powershell -NoProfile -ExecutionPolicy Bypass -File stage_bundle.ps1 -Source C:\Users\FullSend\Documents\FXJEFE_Project -Destination .\stage
+powershell -NoProfile -ExecutionPolicy Bypass -File build_image.ps1 -Source C:\Users\FullSend\Documents\FXJEFE_Project -Image fxjefe:latest
 ```
 
-Build and run on the Linux machine. The health check requests `http://127.0.0.1:8081/health` and requires at least one loaded model.
+Tag and push a private image. Docker Hub:
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -File build_image.ps1 -Source C:\Users\FullSend\Documents\FXJEFE_Project -Image fxjefe:latest -Registry docker.io/YOURUSER/fxjefe:latest -Push
+```
+
+GHCR:
+
+```bat
+docker login ghcr.io
+powershell -NoProfile -ExecutionPolicy Bypass -File build_image.ps1 -Source C:\Users\FullSend\Documents\FXJEFE_Project -Image fxjefe:latest -Registry ghcr.io/FXJEFE/fxjefe:latest -Push
+```
+
+On the Linux VPS, after `docker login` to the same registry:
 
 ```bash
-docker build -t fxjefe:latest .
-docker compose up -d
+docker pull ghcr.io/FXJEFE/fxjefe:latest
+docker tag ghcr.io/FXJEFE/fxjefe:latest fxjefe:latest
+export MT5_ACCOUNT= MT5_PASSWORD= MT5_SERVER= FXJEFE_DASHBOARD_TOKEN=
+FXJEFE_BIND_ADDR=0.0.0.0 docker compose up -d
 docker inspect --format '{{.State.Health.Status}}' fxjefe
-python health_client.py --project-dir . PING
 ```
 
-Published ports are bound to `127.0.0.1` on the host. Open them further only with a firewall rule you choose.
+`FXJEFE_BIND_ADDR` defaults to `127.0.0.1`. Set it to `0.0.0.0` only behind a firewall. The health check calls `http://127.0.0.1:8081/health` inside the container and requires at least one loaded model. Ports `8080`, `8081`, and `5555` are exposed.
 
-Private registry and a VPS, after `docker login` to that registry:
+A replay-only build, with no owner models in `bundle\models`, still fits provisional artifacts on `data/replay_sample.csv` and answers the ping. An optional read-only `./stage` mount can add files at start without writing back to that folder.
 
-```bash
-docker tag fxjefe:latest registry.example.com/fxjefe/fxjefe:latest
-docker push registry.example.com/fxjefe/fxjefe:latest
-```
-
-On the VPS:
-
-```bash
-docker login registry.example.com
-docker pull registry.example.com/fxjefe/fxjefe:latest
-docker tag registry.example.com/fxjefe/fxjefe:latest fxjefe:latest
-export MT5_ACCOUNT= MT5_PASSWORD= MT5_SERVER=
-docker compose up -d
-```
-
-Copy the `stage` directory to the VPS if you want the owner's models and CSV mounted read-only at `/stage`. The container copies them into its own tree and does not write back to the mount.
+The image built in this environment is `fxjefe:latest` (`809368f6f4fe`). `docker images` reports **5.21 GB**. `docker image inspect` records 1,580,595,796 bytes. Startup printed `talib 0.4.28` on Python 3.11.18 and `fxjefe38 3.8.10 talib 0.4.28 tensorflow 2.10.1`. The container reached `healthy` after the paper pipeline, with all 8 models on the ping and `order_sent=False`.
 
 ## Still checked on the Windows machine (LocalLarry)
 
-MetaTrader5 live bars, the TA-Lib C library versus the numpy fallback, a real TensorFlow 2.10 fit, and merging `predict.mqh` into the terminal tree. Those pieces are not executed in CI.
+Run `build_image.ps1` against the real `models` and CSV folders (this checkout does not contain those originals). MetaTrader5 live bars still come from the Windows terminal over ZMQ and HTTP. Merge `predict.mqh` into the terminal tree and compile it there. A Keras weight fit with `--fit-keras` on the bundled 3.8 interpreter is available inside the image; it was not run against the owner's historical files.
 
 ## Do not commit
 

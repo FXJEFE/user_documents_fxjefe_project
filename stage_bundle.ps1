@@ -72,9 +72,14 @@ function Add-Tree([string]$RelativeFolder) {
 Add-Tree "models"
 Add-Tree "data"
 
-$rules = Join-Path $sourceRoot "configftmo.json"
-if (Test-Path -LiteralPath $rules -PathType Leaf) {
-    $planned.Add([pscustomobject]@{ Source = $rules; Relative = "configftmo.json" }) | Out-Null
+foreach ($extra in @("config.json", "configftmo.json")) {
+    $extraPath = Join-Path $sourceRoot $extra
+    if (Test-Path -LiteralPath $extraPath -PathType Leaf) {
+        $planned.Add([pscustomobject]@{ Source = $extraPath; Relative = $extra }) | Out-Null
+    }
+}
+Get-ChildItem -LiteralPath $sourceRoot -File -Filter *.signature.json -ErrorAction SilentlyContinue | ForEach-Object {
+    $planned.Add([pscustomobject]@{ Source = $_.FullName; Relative = $_.Name }) | Out-Null
 }
 
 $before = @{}

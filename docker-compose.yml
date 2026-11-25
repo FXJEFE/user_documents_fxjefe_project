@@ -4,16 +4,17 @@ services:
     image: fxjefe:latest
     container_name: fxjefe
     ports:
-      - "127.0.0.1:8080:8080"
-      - "127.0.0.1:8081:8081"
-      - "127.0.0.1:5555:5555"
+      - "${FXJEFE_BIND_ADDR:-127.0.0.1}:8080:8080"
+      - "${FXJEFE_BIND_ADDR:-127.0.0.1}:8081:8081"
+      - "${FXJEFE_BIND_ADDR:-127.0.0.1}:5555:5555"
     environment:
       MT5_ACCOUNT: ${MT5_ACCOUNT:-}
       MT5_PASSWORD: ${MT5_PASSWORD:-}
       MT5_SERVER: ${MT5_SERVER:-}
       MT5_PATH: ${MT5_PATH:-}
+      FXJEFE_DASHBOARD_TOKEN: ${FXJEFE_DASHBOARD_TOKEN:-}
       FXJEFE_HEALTH_BIND: "0.0.0.0"
-      FXJEFE_FEATURE_BACKEND: numpy
+      FXJEFE_PYTHON38: /opt/fxjefe38/bin/python3.8
       FXJEFE_STAGE_DIR: /stage
     volumes:
       - ${FXJEFE_STAGE_DIR:-./stage}:/stage:ro

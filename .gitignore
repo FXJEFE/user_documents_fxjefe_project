@@ -10,6 +10,13 @@ logs/
 Logs/
 artifacts/
 stage/
+bundle/manifest.sha256.json
+bundle/config.json
+bundle/configftmo.json
+bundle/models/*
+!bundle/models/.gitkeep
+bundle/data/*
+!bundle/data/.gitkeep
 state/
 *.pkl
 *.joblib

@@ -12,12 +12,8 @@ venv
 Logs
 logs
 artifacts
-stage
-models
-*.pkl
-*.joblib
-*.ubj
-configftmo.json
+/stage
+/models
 *.pem
 *.key
 id_rsa
@@ -28,3 +24,4 @@ secrets
 **/*password*
 **/*secret*
 **/*credential*
+/configftmo.json

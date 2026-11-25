@@ -96,8 +96,27 @@ def ensure_rules(app: Path) -> None:
     print("paper runtime copied configftmo.example.json to configftmo.json", flush=True)
 
 
+def _runtime_banner() -> None:
+    print("fxjefe python {0}".format(sys.version.split()[0]), flush=True)
+    try:
+        import talib
+        print("talib {0}".format(getattr(talib, "__version__", "loaded")), flush=True)
+    except Exception as exc:
+        print("talib unavailable ({0})".format(exc.__class__.__name__), flush=True)
+    py38 = os.environ.get("FXJEFE_PYTHON38", "/opt/fxjefe38/bin/python3.8")
+    if os.path.isfile(py38):
+        probe = subprocess.call(
+            [py38, "-c", "import sys,talib,tensorflow; print('fxjefe38', sys.version.split()[0], 'talib', talib.__version__, 'tensorflow', tensorflow.__version__)"],
+        )
+        if probe != 0:
+            print("fxjefe38 probe failed", flush=True)
+    else:
+        print("fxjefe38 interpreter is not in this image", flush=True)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    _runtime_banner()
     if "--live" in argv:
         print(
             "This Linux image cannot attach to MetaTrader5. "
