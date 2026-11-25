@@ -1,7 +1,7 @@
 {
   ".github/workflows/fxjefe-ci.yml": "48813d5d691a885d394e7eba746df2c8fc475afee9e6170b3ff69b0bf15232a7",
   "ALIGNMENT_V2.md": "1b5b16c17521b0b68533c0a35bba377addee5b7b77d7379dd0eac1a3b485e64f",
-  "Dockerfile": "0c36ca6ad25ca43b2d18ec13cd90fda4738a06c39c94c15248d7e61f83d60810",
+  "Dockerfile": "b05091e8904f89ee8511ac5cf87015c59f217281300dbeceb3f917a9380b8d5e",
   "Makefile": "9341e1ae26738a60181acc7d6adb3a2e32b88ae13c680fb049ed3a2b8eb4c343",
   "README.md": "d01360ad4d3aeda4720d60788041b8230ee8d2ccbd2daa0d8c75d2d9cd0db9c5",
   "README_SYNC.md": "786c078fff1504ce57b4c60dbd16c8cd3c5cb641d44b2a44a40d509c9e8590bd",
@@ -47,7 +47,7 @@
   "requirements_mac.txt": "9ec2771a2f54112377e3cd1f6b1c82d51358099f412def881d9122bf87284555",
   "requirements_win.txt": "18ce8cc3f9bef66afddf8cff801166d44b185afdea69ae2e52458897ea50f5c5",
   "run_pipeline.bat": "4f9e92ed631aac1a23cb6e16f06c6981eb1bd0d4ac2f66c1e0b45de29d759f6a",
-  "run_pipeline.py": "352f7b4cb41a6d479468ffe6513a43d4bdad1a17f469be71307433e596fb6412",
+  "run_pipeline.py": "8dd09c9929e600696dc9327f42fc84857769f04395c6bbc5b8bc37fb6a719618",
   "runtime/FEATURE_POLICY.md": "9220be5e7df14cf5a5cd36457e1f4da1082245e14d151d2286f6d17357c7160e",
   "runtime/config.accept_all.json": "64945545aafac28ac59ff9a353489266158290d9e1a548add1e6a815bdbf43c4",
   "runtime/encoding_utf8.py": "708bccd5248a0f7655a6a578e2dbfef3a3faa1866fbc45c9c01007a626ab7e37",

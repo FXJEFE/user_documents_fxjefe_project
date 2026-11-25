@@ -149,6 +149,16 @@ def execute(ctx: Dict[str, Any], stages: List[Dict[str, Any]]) -> int:
     return 0
 
 
+def _child_env() -> Dict[str, str]:
+    """Give stage subprocesses the repo root, including runtime/signal_gate.py."""
+    env = os.environ.copy()
+    root = str(CODE_ROOT)
+    parts = [item for item in env.get("PYTHONPATH", "").split(os.pathsep) if item]
+    if root not in parts:
+        env["PYTHONPATH"] = os.pathsep.join([root] + parts) if parts else root
+    return env
+
+
 def _run_stage(ctx: Dict[str, Any], stage: Dict[str, Any]) -> int:
     script = stage["script"]
     entry = stage.get("entry") or "run"
@@ -161,7 +171,7 @@ def _run_stage(ctx: Dict[str, Any], stage: Dict[str, Any]) -> int:
             if ctx.get("dry_run"):
                 cmd.append("--paper")
             log.info("fxjefe38 %s", " ".join(cmd))
-            completed = subprocess.run(cmd)
+            completed = subprocess.run(cmd, env=_child_env())
             return int(completed.returncode)
     module = load_module(script, code_root)
     fn = getattr(module, entry, None)
@@ -197,7 +207,7 @@ def verify_prelude(ctx: Dict[str, Any]) -> int:
         if ctx.get("dry_run"):
             cmd.append("--paper")
         log.info("verify %s", " ".join(cmd))
-        completed = subprocess.run(cmd)
+        completed = subprocess.run(cmd, env=_child_env())
         if completed.returncode != 0:
             log.error("verification failed: %s exit %s", script, completed.returncode)
             return int(completed.returncode)
@@ -207,7 +217,7 @@ def verify_prelude(ctx: Dict[str, Any]) -> int:
     if not _health(base):
         cmd = [sys.executable, str(code_root / "ai_server_golden.py"), "--project-dir", str(project)]
         log.info("start %s", " ".join(cmd))
-        proc = subprocess.Popen(cmd)
+        proc = subprocess.Popen(cmd, env=_child_env())
         ctx["golden_server"] = proc
         ready = False
         for _ in range(40):
