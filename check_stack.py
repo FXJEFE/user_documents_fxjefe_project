@@ -12,7 +12,7 @@ REQUIRED = [
 OPTIONAL = [
     ("xgboost", "xgboost"), ("arch", "arch"), ("pandas_ta", "pandas_ta"),
     ("fastapi", "fastapi"), ("tensorflow", "tensorflow"), ("MetaTrader5", "MetaTrader5"),
-    ("talib", "talib"), ("optuna", "optuna"),
+    ("talib", "talib"), ("optuna", "optuna"), ("pyzmq", "zmq"),
 ]
 
 def try_import(label: str, module: str) -> Tuple[str, str]:

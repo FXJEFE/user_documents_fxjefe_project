@@ -11,3 +11,4 @@ arch==6.3.0
 optuna==4.1.0
 MetaTrader5==5.0.6231
 onnxruntime==1.19.2
+pyzmq==26.2.0

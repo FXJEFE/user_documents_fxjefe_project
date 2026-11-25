@@ -65,6 +65,7 @@ def run(ctx: Dict[str, Any]) -> int:
     mt5 = ctx.get("mt5") if ctx.get("mt5") is not None else _import_mt5()
     if mt5 is None:
         ctx["mt5_connected"] = False
+        _record_mt5(ctx, False, "not_installed")
         if dry_run:
             log.info("MetaTrader5 is not installed; continuing in paper mode")
             return 0
@@ -75,6 +76,7 @@ def run(ctx: Dict[str, Any]) -> int:
     except CredentialError as exc:
         log.error("%s", exc)
         ctx["mt5_connected"] = False
+        _record_mt5(ctx, False, "credentials")
         return 1
     kwargs: Dict[str, Any] = {}
     if path:
@@ -89,6 +91,7 @@ def run(ctx: Dict[str, Any]) -> int:
     else:
         log.error("LIVE MODE requires MT5_ACCOUNT, MT5_PASSWORD, and MT5_SERVER")
         ctx["mt5_connected"] = False
+        _record_mt5(ctx, False, "credentials_missing")
         return 1
     try:
         ok = bool(mt5.initialize(**kwargs))
@@ -97,6 +100,7 @@ def run(ctx: Dict[str, Any]) -> int:
         ok = False
     if not ok:
         ctx["mt5_connected"] = False
+        _record_mt5(ctx, False, "initialize_failed")
         if dry_run:
             log.info("MT5 terminal is not available; continuing in paper mode")
             return 0
@@ -105,6 +109,7 @@ def run(ctx: Dict[str, Any]) -> int:
     ctx["mt5"] = mt5
     ctx["mt5_connected"] = True
     ctx["account"] = _snapshot_from_terminal(mt5)
+    _record_mt5(ctx, True, "connected")
     account = ctx["account"]
     log.info(
         "MT5 connected balance=%s equity=%s margin_free=%s",
@@ -113,6 +118,18 @@ def run(ctx: Dict[str, Any]) -> int:
         account.get("margin_free"),
     )
     return 0
+
+
+def _record_mt5(ctx: Dict[str, Any], connected: bool, detail: str) -> None:
+    root = ctx.get("project_root")
+    if root is None:
+        return
+    try:
+        from health_state import record_mt5
+        cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else None
+        record_mt5(root, cfg, connected, detail)
+    except Exception:
+        log.info("MT5 state was not written to the health file")
 
 
 def main(argv=None) -> int:

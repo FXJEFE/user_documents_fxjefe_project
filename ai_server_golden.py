@@ -26,7 +26,32 @@ except Exception:
     HAS_JOBLIB = False
 
 
-def make_handler(predict_path: str):
+def _ensemble_body(project: str, payload: dict) -> dict:
+    """Score the shared stack. A provisional paper fit leaves the traded signal on hold."""
+    hold = {"signal": "hold", "confidence": 0.0, "predicted_change": 0.0, "sentiment": "neutral"}
+    if not project:
+        return hold
+    try:
+        from pathlib import Path
+        from ml_models import load_stack
+        from path_resolver import load_config
+        root = Path(project)
+        cfg = load_config(root)
+        stack = load_stack(root, cfg)
+    except Exception:
+        return hold
+    if stack is None or not stack.any_loaded:
+        return hold
+    try:
+        prediction = stack.predict_payload(payload if isinstance(payload, dict) else {})
+        body = stack.traded_body(prediction, bool(cfg.get("ensemble_is_traded_model")))
+    except Exception:
+        return hold
+    body.setdefault("sentiment", "neutral")
+    return body
+
+
+def make_handler(predict_path: str, project: str = ""):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, payload: dict) -> None:
             body = json.dumps(payload).encode("utf-8")
@@ -51,11 +76,13 @@ def make_handler(predict_path: str):
                 self._send(404, {"status": "not_found"})
                 return
             try:
-                json.loads(raw.decode("utf-8") or "{}")
+                payload = json.loads(raw.decode("utf-8") or "{}")
             except ValueError:
-                self._send(400, {"signal": "hold", "confidence": 0.0})
+                self._send(400, {"signal": "hold", "confidence": 0.0, "predicted_change": 0.0})
                 return
-            self._send(200, {"signal": "hold", "confidence": 0.0, "sentiment": "neutral"})
+            if not isinstance(payload, dict):
+                payload = {}
+            self._send(200, _ensemble_body(project, payload))
 
         def log_message(self, fmt: str, *args) -> None:
             return
@@ -91,7 +118,7 @@ def main(argv=None) -> int:
             predict_path = "/predict"
     if not port:
         port = 8080
-    server = ThreadingHTTPServer((args.host, port), make_handler(predict_path))
+    server = ThreadingHTTPServer((args.host, port), make_handler(predict_path, str(args.project_dir or "")))
     print("golden server listening on {0}:{1}".format(args.host, port), flush=True)
     try:
         server.serve_forever()

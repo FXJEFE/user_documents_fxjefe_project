@@ -1,0 +1,10 @@
+# Linux image for the paper runtime. Python 3.11.
+# TensorFlow 2.10.1, Keras 2.10.0, and TA-Lib 0.4.28 stay on the Windows fxjefe38 env.
+# MetaTrader5 is Windows-only and is not installed here.
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.13.1
+scikit-learn==1.5.2
+joblib==1.4.2
+xgboost==2.1.4
+pyzmq==26.2.0
