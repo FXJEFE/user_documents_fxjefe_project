@@ -104,6 +104,15 @@ def _configure_logging(root: Path) -> None:
     )
 
 
+def _record_stage(ctx: Dict[str, Any], script: str, state: str, detail: str = "") -> None:
+    try:
+        from health_state import record_stage
+        cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else None
+        record_stage(ctx["project_root"], cfg, script, state, detail)
+    except Exception:
+        log.info("health stage status was not recorded for %s", script)
+
+
 def execute(ctx: Dict[str, Any], stages: List[Dict[str, Any]]) -> int:
     total = len(stages)
     log.info("dry_run=%s", ctx.get("dry_run", True))
@@ -113,12 +122,15 @@ def execute(ctx: Dict[str, Any], stages: List[Dict[str, Any]]) -> int:
         entry = stage.get("entry") or "run"
         group = stage["group"]
         log.info("START %s/%s group=%s script=%s entry=%s", index, total, group, script, entry)
+        _record_stage(ctx, script, "running")
         try:
             rc = _run_stage(ctx, stage)
         except Exception as exc:
             log.exception("stage %s failed: %s", script, exc)
+            _record_stage(ctx, script, "failed", exc.__class__.__name__)
             return 1
         if rc != 0:
+            _record_stage(ctx, script, "failed", "exit {0}".format(rc))
             log.error(
                 "ABORT at %s/%s %s %s() returned %s. Later stages were not started.",
                 index,
@@ -128,6 +140,7 @@ def execute(ctx: Dict[str, Any], stages: List[Dict[str, Any]]) -> int:
                 rc,
             )
             return rc
+        _record_stage(ctx, script, "ok")
         log.info("OK %s", script if entry == "run" else "{0}:{1}".format(script, entry))
     if ctx.get("dry_run", True) and ctx.get("order_sent"):
         log.error("pipeline finished with order_sent set; paper mode must not send orders")
@@ -208,11 +221,11 @@ def verify_prelude(ctx: Dict[str, Any]) -> int:
             log.error("ai_server_golden /health failed: %s", health)
             return 1
     log.info("golden /health ok %s", health)
+    _start_health(ctx)
     return 0
 
 
-def _stop_server(ctx: Dict[str, Any]) -> None:
-    proc = ctx.get("golden_server")
+def _stop_process(proc: Any) -> None:
     if proc is None or proc.poll() is not None:
         return
     proc.terminate()
@@ -220,6 +233,28 @@ def _stop_server(ctx: Dict[str, Any]) -> None:
         proc.wait(timeout=3)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+
+def _stop_server(ctx: Dict[str, Any]) -> None:
+    _stop_process(ctx.get("golden_server"))
+    _stop_process(ctx.get("health_server"))
+
+
+def _start_health(ctx: Dict[str, Any]) -> None:
+    """ZMQ status server. A bind failure is logged and does not stop the pipeline."""
+    try:
+        from health_server import start_subprocess
+    except Exception as exc:
+        log.info("health server is not available (%s)", exc.__class__.__name__)
+        return
+    proc = start_subprocess(Path(ctx["project_root"]))
+    ctx["health_server"] = proc
+    if proc is None:
+        return
+    time.sleep(0.3)
+    if proc.poll() is not None:
+        log.info("health server exited early (%s); pipeline continues without the ping socket", proc.returncode)
+        ctx["health_server"] = None
 
 
 LIVE_BANNER = (

@@ -121,6 +121,60 @@ EA: allow WebRequest for `http://127.0.0.1:8080` (and LAN IP if split hosts).
 
 ---
 
+## Health server, ML stack, and market analytics
+
+Every model reads the same 29-name contract from `config.json` (`signal_require_featureset_match`). The ordered hash is `8188812e402fca6a55928bfbdb4a91b0f9a89d80ac182b44428c4d208672caa0`. `mql5/Include/predict.mqh`, `mql5/Experts/Predict.mq5`, and `mql5/Scripts/GenerateFeatures.mq5` carry that same name list. Copy those files into the terminal `Include`, `Experts`, and `Scripts` folders on the Windows machine when you want the live EA to pick them up. This repo does not write into the MetaQuotes directory.
+
+There is no `LTDM` class in the previous checkout. Here LTDM is the long-horizon temporal model: the LSTM cell with `ltdm_lookback` (default 16) and a second layer. `lstm` uses `lstm_lookback` (default 8) and one layer. On `fxjefe38` (Python 3.8.10) those two can also be fit with TensorFlow 2.10.1 / Keras 2.10.0 (`--fit-keras`). On `fxjefe` (Python 3.11) the same JSON weights run as a numpy LSTM, because TensorFlow 2.10.1 is pinned to 3.8.10. TA-Lib 0.4.28 is the pinned wheel in `requirements-fxjefe38.txt`. When TA-Lib is missing, the numpy formulas fill the same 29 columns.
+
+The voting ensemble is the common prediction: `signal`, `confidence`, `predicted_change`. Members are linear regression, an MLP, random forest, XGBoost, LSTM, LTDM, and a `GridSearchCV` logistic model. New files are written only under `artifacts/ml_stack`. Nothing under `models/` is opened or replaced. A paper auto-fit is marked provisional. `/predict` keeps `signal` at `hold` and puts the vote on `ensemble_signal` until you run `ml_stack.py --fit` or set `ensemble_is_traded_model` to true. Existing FTMO, margin, feature-hash, and 0.77 confidence rules are unchanged.
+
+Symbols and timeframes come from `config.json`, then from `configftmo.json`. The replay file is `data/replay_sample.csv` (EURUSD and GBPUSD, M1/M5/M15/H1).
+
+The health server is ZMQ REQ/REP on `tcp://127.0.0.1:5555` (config `zmq_health_port`). Commands are `PING`, `STATUS`, and `MODELS`. The same JSON is HTTP `GET http://127.0.0.1:8081/status` and the ping document is `GET http://127.0.0.1:8081/health`. Each model heartbeat has `name`, `version`, `feature_hash`, `load_time`, and `last_prediction_time`. `Predict.mq5` calls that ping on init and posts the feature window to `/predict`. Allow WebRequest for `http://127.0.0.1:8081` as well as port 8080. Compile the ZMQ branch by defining `FXJEFE_HAVE_ZMQ` after mql-zmq is installed.
+
+`market_analytics.py` pulls bars with MetaTrader5 when the terminal is connected and otherwise reads the replay CSV. It records predicted change, feature PSI against the training window, prediction drift, and sign accuracy of predicted versus realized change. A separate historical CSV is scored when `historical_csv` exists and is a different file. Output is `Logs/analytics.csv`, `Logs/analytics.jsonl`, and the health document. The loop does not send orders.
+
+### Windows commands
+
+```bat
+cd /d %USERPROFILE%\Documents\FXJEFE_Project
+copy /Y configftmo.example.json configftmo.json
+
+fxjefe\Scripts\python.exe health_server.py --project-dir %USERPROFILE%\Documents\FXJEFE_Project
+```
+
+Second window, after the server prints its bind line:
+
+```bat
+cd /d %USERPROFILE%\Documents\FXJEFE_Project
+fxjefe\Scripts\python.exe market_analytics.py --project-dir %USERPROFILE%\Documents\FXJEFE_Project --paper
+fxjefe\Scripts\python.exe health_client.py --project-dir %USERPROFILE%\Documents\FXJEFE_Project PING
+fxjefe\Scripts\python.exe health_client.py --project-dir %USERPROFILE%\Documents\FXJEFE_Project STATUS
+type Logs\health_status.json
+type Logs\analytics.csv
+```
+
+One paper pass of the whole pipeline, including the model load and one analytics pass:
+
+```bat
+cd /d %USERPROFILE%\Documents\FXJEFE_Project
+run_pipeline.bat --paper
+```
+
+Promote a fit so `/predict` can trade the ensemble, still subject to the existing FTMO gate:
+
+```bat
+fxjefe\Scripts\python.exe ml_stack.py --fit --project-dir %USERPROFILE%\Documents\FXJEFE_Project
+fxjefe38\Scripts\python.exe ml_stack.py --fit-keras --project-dir %USERPROFILE%\Documents\FXJEFE_Project
+```
+
+`--fit-keras` needs the `fxjefe38` environment. It writes `artifacts/ml_stack/lstm_keras` and `ltdm_keras` only when those directories are absent.
+
+### Still checked on the Windows machine (LocalLarry)
+
+MetaTrader5 live bars, the TA-Lib C library versus the numpy fallback, a real TensorFlow 2.10 fit, and merging `predict.mqh` into the terminal tree. Those pieces are not executed in CI.
+
 ## Do not commit
 
 - `.env` (secrets)

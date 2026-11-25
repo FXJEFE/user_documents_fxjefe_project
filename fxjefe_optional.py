@@ -93,6 +93,14 @@ try:
     HAS_MT5 = True
 except Exception:
     pass
+HAS_ZMQ = False
+zmq = None
+try:
+    import zmq as _zmq
+    zmq = _zmq
+    HAS_ZMQ = True
+except Exception:
+    pass
 HAS_OPTUNA = False
 optuna = None
 try:
@@ -112,7 +120,7 @@ def status():
     return {"numpy": np is not None, "pandas": pd is not None, "sklearn": HAS_SKLEARN, "flask": HAS_FLASK,
             "joblib": HAS_JOBLIB, "talib": HAS_TALIB, "xgboost": HAS_XGB, "arch": HAS_ARCH,
             "pandas_ta": HAS_PANDAS_TA, "fastapi": HAS_FASTAPI, "tensorflow": HAS_TF,
-            "MetaTrader5": HAS_MT5, "optuna": HAS_OPTUNA}
+            "MetaTrader5": HAS_MT5, "optuna": HAS_OPTUNA, "pyzmq": HAS_ZMQ}
 
 if __name__ == "__main__":
     import json

@@ -144,8 +144,8 @@ def _score_group(group, stack, contract, window, digest, historical) -> Dict[str
     timeframe = str(group["timeframe"].iloc[-1])
     matrix = group[list(contract)].to_numpy(dtype=float)
     prediction = stack.predict_window(matrix.tolist(), symbol, timeframe)
-    train_changes = _predict_changes(stack, train, contract) if len(train) else []
-    live_changes = _predict_changes(stack, live, contract)
+    train_changes, train_realized_sample = _predict_changes(stack, train, contract) if len(train) else ([], [])
+    live_changes, live_realized_sample = _predict_changes(stack, live, contract)
     feature_psi = []
     for name in contract:
         left = train[name].to_numpy(dtype=float) if len(train) else group[name].to_numpy(dtype=float)
@@ -164,8 +164,6 @@ def _score_group(group, stack, contract, window, digest, historical) -> Dict[str
         hist_psi = float(np.mean(values)) if values else None
     train_mean = float(np.mean(train_changes)) if train_changes else 0.0
     live_mean = float(np.mean(live_changes)) if live_changes else float(prediction.predicted_change)
-    realized_live = live["next_return"].to_numpy(dtype=float) if "next_return" in live.columns else []
-    realized_train = train["next_return"].to_numpy(dtype=float) if len(train) and "next_return" in train.columns else []
     return {
         "time": str(group["time"].iloc[-1]) if "time" in group.columns else "",
         "symbol": symbol,
@@ -177,17 +175,17 @@ def _score_group(group, stack, contract, window, digest, historical) -> Dict[str
         "feature_hash": digest,
         "feature_drift_psi": float(np.mean(feature_psi)) if feature_psi else 0.0,
         "prediction_drift": live_mean - train_mean,
-        "insample_sign_accuracy": sign_accuracy(train_changes, realized_train),
-        "live_sign_accuracy": sign_accuracy(live_changes, realized_live),
+        "insample_sign_accuracy": sign_accuracy(train_changes, train_realized_sample),
+        "live_sign_accuracy": sign_accuracy(live_changes, live_realized_sample),
         "historical_feature_psi": hist_psi,
         "historical_baseline": "historical_csv" if hist_psi is not None else "training_window",
         "bars": int(len(group)),
     }
 
 
-def _predict_changes(stack, group, contract) -> List[float]:
+def _predict_changes(stack, group, contract):
     if len(group) == 0:
-        return []
+        return [], []
     values = group[list(contract)].to_numpy(dtype=float)
     symbol = str(group["symbol"].iloc[-1])
     timeframe = str(group["timeframe"].iloc[-1])
@@ -199,11 +197,20 @@ def _predict_changes(stack, group, contract) -> List[float]:
         if indexes[-1] != len(group) - 1:
             indexes.append(len(group) - 1)
     changes = []
+    realized = []
+    series = group["next_return"] if "next_return" in group.columns else None
     for index in indexes:
         start = max(0, index - lookback + 1)
         prediction = stack.predict_window(values[start:index + 1].tolist(), symbol, timeframe)
         changes.append(prediction.predicted_change)
-    return changes
+        if series is None:
+            realized.append(float("nan"))
+        else:
+            try:
+                realized.append(float(series.iloc[index]))
+            except (TypeError, ValueError):
+                realized.append(float("nan"))
+    return changes, realized
 
 
 def _historical_features(root, cfg, contract, replay):

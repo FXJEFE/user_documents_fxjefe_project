@@ -77,6 +77,17 @@ def server_signal(ctx: Dict[str, Any], symbol: str, timeframe: str, features: Di
     return _http_json(base + path, {"symbol": symbol, "timeframe": timeframe, "features": features})
 
 
+def _predicted_change(remote: Optional[Dict[str, Any]], local: Optional[Dict[str, Any]]) -> Optional[float]:
+    for source in (remote, local):
+        if not isinstance(source, dict) or source.get("predicted_change") is None:
+            continue
+        try:
+            return float(source["predicted_change"])
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _direction(value: Any) -> str:
     text = str(value or "").strip().lower()
     if text in ("buy", "sell"):
@@ -107,11 +118,13 @@ def combine_signal(ctx: Dict[str, Any], symbol: str, timeframe: str) -> Dict[str
         confidence = min(item[1] for item in directional)
     else:
         side, confidence = "hold", 0.0
+    change = _predicted_change(remote, local)
     return {
         "symbol": symbol,
         "timeframe": timeframe,
         "signal": side,
         "confidence": confidence,
+        "predicted_change": change,
         "sentiment": sentiment_label,
         "sentiment_score": score,
         "min_confidence": min_confidence,
@@ -242,11 +255,12 @@ def run(ctx: Dict[str, Any]) -> int:
         for timeframe in timeframes:
             decision = combine_signal(ctx, symbol, timeframe)
             log.info(
-                "signal %s %s %s confidence=%s sentiment=%s",
+                "signal %s %s %s confidence=%s predicted_change=%s sentiment=%s",
                 symbol,
                 timeframe,
                 decision["signal"],
                 decision["confidence"],
+                decision.get("predicted_change"),
                 decision["sentiment"],
             )
             if decision["signal"] not in ("buy", "sell"):

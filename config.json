@@ -26,5 +26,29 @@
   "signal_require_model_loaded": true,
   "signal_require_featureset_match": true,
   "skip_training_in_pipeline": true,
-  "policy_note": "Alignment Plan v2: 29 features, 0.77 gate, 3-group consensus. NO FILTERING/BLOCKING."
+  "symbols": ["EURUSD", "GBPUSD"],
+  "timeframes": ["M1", "M5", "M15", "H1"],
+  "zmq_health_port": 5555,
+  "health_http_port": 8081,
+  "health_bind": "127.0.0.1",
+  "health_status_file": "Logs/health_status.json",
+  "ml_artifact_dir": "artifacts/ml_stack",
+  "replay_csv": "data/replay_sample.csv",
+  "lstm_lookback": 8,
+  "ltdm_lookback": 16,
+  "analytics_live_window": 20,
+  "analytics_interval_seconds": 5,
+  "analytics_bars": 300,
+  "ml_fit_max_rows": 2000,
+  "ensemble_is_traded_model": false,
+  "ensemble_weights": {
+    "linear": 1.0,
+    "mlp": 1.0,
+    "random_forest": 1.0,
+    "xgboost": 1.0,
+    "lstm": 1.0,
+    "ltdm": 1.0,
+    "gridsearch": 1.0
+  },
+  "policy_note": "Alignment Plan v2: 29 features, 0.77 gate, voting consensus. NO FILTERING/BLOCKING. ensemble_is_traded_model stays false until ml_stack.py --fit or the flag is set, so a paper auto-fit leaves /predict on hold. That switch is not a risk limit."
 }

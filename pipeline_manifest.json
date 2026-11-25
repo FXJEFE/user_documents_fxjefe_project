@@ -29,10 +29,12 @@
     {"id": "09", "group": "features", "script": "garch_async.py", "entry": "run", "python": "fxjefe38", "required": true},
     {"id": "10", "group": "features", "script": "garch_multistep.py", "entry": "run", "python": "fxjefe38", "required": true},
     {"id": "11", "group": "model", "script": "feature_importance_nan.py", "entry": "run", "required": true},
+    {"id": "11a", "group": "model", "script": "ml_stack.py", "entry": "run", "required": true},
     {"id": "12", "group": "signals", "script": "runtime/signal_gate.py", "entry": "run", "required": true},
     {"id": "13", "group": "signals", "script": "trade_policy_config.py", "entry": "run", "required": true},
     {"id": "14", "group": "ftmo_risk_gate", "script": "ftmo_rules.py", "entry": "run_gate", "required": true},
     {"id": "15", "group": "execution", "script": "strategy_loop.py", "entry": "run", "required": true},
+    {"id": "15a", "group": "monitoring", "script": "market_analytics.py", "entry": "run", "required": true},
     {"id": "16", "group": "monitoring", "script": "mt5_latency_bench.py", "entry": "run", "required": true},
     {"id": "17", "group": "monitoring", "script": "verify_checksums.py", "entry": "run", "required": true}
   ],
