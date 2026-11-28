@@ -13,7 +13,10 @@ log = logging.getLogger("fxjefe.signals")
 
 
 def _load_feature_hash_module():
-    path = Path(__file__).resolve().parent.parent / "feature_hash.py"
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    path = root / "feature_hash.py"
     spec = importlib.util.spec_from_file_location("fxjefe_feature_hash_root", str(path))
     module = importlib.util.module_from_spec(spec)
     sys.modules["fxjefe_feature_hash_root"] = module

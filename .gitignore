@@ -1,6 +1,8 @@
 .env
 venv/
 .venv/
+fxjefe/
+fxjefe38/
 __pycache__/
 *.py[cod]
 *.bak_*

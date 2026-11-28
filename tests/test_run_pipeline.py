@@ -370,8 +370,9 @@ class PipelineTests(unittest.TestCase):
     def test_sources_do_not_hardcode_credentials(self):
         assigned = re.compile(r"(?i)(account|login|password)\s*=\s*['\"][^'\"]+['\"]")
         numbered = re.compile(r"(?i)(account|login)\s*=\s*\d{5,}")
+        skip = {".git", "tests", ".venv", "venv", "fxjefe", "fxjefe38", "__pycache__"}
         for path in REPO.rglob("*.py"):
-            if any(part in path.parts for part in (".git", "tests")):
+            if any(part in path.parts for part in skip):
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             self.assertIsNone(assigned.search(text), path.name)
